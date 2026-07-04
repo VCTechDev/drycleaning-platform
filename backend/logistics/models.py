@@ -20,6 +20,8 @@ class DeliveryAgent(models.Model):
     shift_starts_at = models.TimeField()
     shift_ends_at = models.TimeField()
     is_active = models.BooleanField(default=True)
+    
+    is_online=models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -45,7 +47,7 @@ class DeliveryTask(models.Model):
 
     order = models.ForeignKey(
         Order,
-        on_delete=models.PROTECT,
+        on_delete=models.PROTECT,related_name="delivery_tasks"
     )
     delivery_agent = models.ForeignKey(
         DeliveryAgent,

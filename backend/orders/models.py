@@ -74,19 +74,36 @@ class Order(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
+    
+    def create_pickup_task(self,old_status):
+        
+        from logistics.models import DeliveryTask
+        
+        if old_status != "accepted" and self.order_status == "accepted":
+            task,created=DeliveryTask.objects.get_or_create(order=self,task_type="pickup")
+            
+            if created:
+                self.assign_delivery_agent(task)
+            
+    def assign_delivery_agent(self,task):
+        
+        delivery_agent=self.shop.delivery_agents.filter(is_active = True , is_online = True).first()
+        
+        if delivery_agent is not None:
+            task.delivery_agent = delivery_agent
+            task.status = "assigned"   
+            task.save()        
+        
     def save(self,*args,**kwargs):
 
         old_status=None
         if self.pk is not None:
             old_status=Order.objects.get(pk=self.pk).order_status
-        
+            
         is_new=self.pk is  None
         super().save(*args,**kwargs)
         
-        from logistics.models import DeliveryTask
-        if old_status!="accepted" and self.order_status == "accepted":
-            DeliveryTask.objects.create(order=self,task_type="pickup")
+        self.create_pickup_task(old_status)
 
         if is_new:
             self.order_number=f"DRY{self.pk:06d}"

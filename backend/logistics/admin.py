@@ -15,8 +15,10 @@ class DeliveryAgentAdminView(admin.ModelAdmin):
         'shift_starts_at',
         'shift_ends_at',
         'is_active',
+        'is_online',
         'created_at',
         'updated_at',
+        
     )
 
     search_fields=(
