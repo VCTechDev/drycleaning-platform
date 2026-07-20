@@ -84,6 +84,16 @@ class Order(models.Model):
             
             if created:
                 self.assign_delivery_agent(task)
+
+    def create_delivery_task(self,old_status):
+
+        from logistics.models import DeliveryTask
+
+        if old_status != "ready" and self.order_status == "ready":
+            task,created=DeliveryTask.objects.get_or_create(order=self,task_type="delivery")
+
+            if created:
+                self.assign_delivery_agent(task)
             
     def assign_delivery_agent(self,task):
         
@@ -104,6 +114,7 @@ class Order(models.Model):
         super().save(*args,**kwargs)
         
         self.create_pickup_task(old_status)
+        self.create_delivery_task(old_status)
 
         if is_new:
             self.order_number=f"DRY{self.pk:06d}"
