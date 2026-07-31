@@ -1,9 +1,12 @@
 from rest_framework.routers import DefaultRouter
-from .api import OrderViewSet
+from .views import CustomerOrderViewSet
 
+router = DefaultRouter()
 
-router=DefaultRouter()
-
-router.register("orders",OrderViewSet)
+router.register(
+    "orders",
+    CustomerOrderViewSet,
+    basename="customer-orders",
+)
 
 urlpatterns = router.urls
