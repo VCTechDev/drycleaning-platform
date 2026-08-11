@@ -10,6 +10,7 @@ class CustomerShopListSerializer(serializers.ModelSerializer):
             "id",
             "shop_name",
             "description",
+            "district",
             "image",
             "city",
             "is_open",

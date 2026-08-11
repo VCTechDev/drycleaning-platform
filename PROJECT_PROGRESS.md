@@ -13,7 +13,10 @@
 - [x] React + TypeScript
 - [x] Vite
 - [x] ESLint
-- [ ] React Router
+- [x] React Router
 - [ ] Axios
 - [ ] Bootstrap
 - [ ] Zustand
+- [x] Routing Architecture
+- [x] Nested Routes
+- [x] Customer Layout

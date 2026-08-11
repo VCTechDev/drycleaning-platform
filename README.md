@@ -61,7 +61,12 @@ This project is being developed incrementally, following a role-based architectu
 ## Frontend
 
 - React
+- TypeScript
+- Vite
+- React Router
 - Axios
+- Zustand
+- Bootstrap
 
 ## Tools
 
@@ -142,11 +147,11 @@ shops/
 - [x] Shop List API
 - [x] Shop Detail API
 - [x] Shop Services API
-- [ ] Create Order API
-- [ ] My Orders API
-- [ ] Order Detail API
+- [x] Create Order API
+- [x] My Orders API
+- [x] Order Detail API
+- [x] Order Tracking API
 - [ ] Profile API
-- [ ] Order Tracking API
 
 ---
 
