@@ -8,11 +8,16 @@ import OrderDetail from "../pages/customer/OrderDetails";
 import OrderTracking from "../pages/customer/OrderTracking";
 
 import ProtectedRoute from "../components/auth/ProtectedRoute";
+import Home from "@/pages/customer/Home";
 
 const CustomerRoutes = (
-    <Route element={<ProtectedRoute />}>
-        {/* Everything inside this route requires login */}
-        <Route path="customer" element={<CustomerLayout />}>
+    <Route path="customer" element={<CustomerLayout />}>
+
+        {/* Public Home */}
+        <Route index element={<Home />} />
+
+        {/* Protected Customer Pages */}
+        <Route element={<ProtectedRoute />}>
 
             <Route path="shops" element={<ShopList />} />
 
@@ -28,6 +33,7 @@ const CustomerRoutes = (
             />
 
         </Route>
+
     </Route>
 );
 

@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
+import type { SubmitEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import {
     ArrowRight,
@@ -6,57 +7,119 @@ import {
     EyeOff,
     LockKeyhole,
     Smartphone,
+    Mail,
+    User,
     ShieldCheck,
     Clock3,
     Award,
 } from "lucide-react";
 
-import { login } from "../../services/authService";
+import { register } from "../../services/authService";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 
-function Login() {
+
+function Register() {
     const navigate = useNavigate();
 
     const [username, setUsername] = useState("");
+    const [email, setEmail] = useState("");
+    const [phoneNumber, setPhoneNumber] = useState("");
+
     const [password, setPassword] = useState("");
+    const [passwordConfirm, setPasswordConfirm] = useState("");
 
     const [showPassword, setShowPassword] = useState(false);
-    const [rememberMe, setRememberMe] = useState(false);
+    const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
+
+    const [termsAccepted, setTermsAccepted] = useState(false);
 
     const [error, setError] = useState("");
+    const [loading, setLoading] = useState(false);
 
-    const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+
+    const handleSubmit = async (event: SubmitEvent) => {
         event.preventDefault();
 
-        try {
-            setError("");
+        // Clear previous error before validating the new submission.
+        setError("");
 
-            const data = await login({
+        // User must accept the terms before creating an account.
+        if (!termsAccepted) {
+            setError("Please accept the Terms & Conditions.");
+            return;
+        }
+
+        // Check passwords before sending the request to Django.
+        if (password !== passwordConfirm) {
+            setError("Passwords do not match.");
+            return;
+        }
+
+        try {
+            setLoading(true);
+
+            await register({
                 username,
+                email,
+                phone_number: phoneNumber,
                 password,
+                password_confirm: passwordConfirm,
             });
 
-            localStorage.setItem("access_token", data.access);
-            localStorage.setItem("refresh_token", data.refresh);
+            // Registration succeeded.
+            // Send the customer to Login so they can authenticate.
+            navigate("/auth/login");
 
-            navigate("/customer/shops");
-        } catch (error) {
+        } catch (error: any) {
             console.error(error);
-            setError("Invalid username or password.");
+
+            // Django validation errors can come as an object.
+            // For now, show a simple message to the user.
+            if (error.response?.data) {
+                const data = error.response.data;
+
+                if (typeof data === "object") {
+                    const firstError = Object.values(data)[0];
+
+                    if (Array.isArray(firstError)) {
+                        setError(String(firstError[0]));
+                    } else {
+                        setError(String(firstError));
+                    }
+                } else {
+                    setError("Registration failed.");
+                }
+            } else {
+                setError("Registration failed. Please try again.");
+            }
+
+        } finally {
+            setLoading(false);
         }
     };
 
+
     return (
         <main className="min-h-screen w-full bg-white">
+
             {/* =========================================================
-                MAIN AUTH CARD
+                MAIN REGISTER CONTAINER
             ========================================================= */}
-            <div className=" flex min-h-screen w-full overflow-hidden bg-white">
+            <div
+                className="
+                    flex
+                    min-h-screen
+                    w-full
+                    overflow-hidden
+                    bg-white
+                "
+            >
+
                 {/* =====================================================
-                    LEFT SIDE — LOGIN FORM
+                    LEFT SIDE — REGISTER FORM
                 ===================================================== */}
                 <section
                     className="
@@ -77,25 +140,27 @@ function Login() {
                     {/* -------------------------------------------------
                         VeeCleen Logo
                     ------------------------------------------------- */}
-                    <div className="mb-7">
+                    <div className="mb-6">
+
                         <img
                             src="/images/branding/veecleen-logo.png"
                             alt="VeeCleen Dry Cleaning"
                             className="
                                 h-auto
-                                w-52.5
+                                w-[190px]
                                 max-w-full
                                 object-contain
-                                sm:w-57.5
+                                sm:w-[210px]
                             "
                         />
+
                     </div>
 
 
                     {/* -------------------------------------------------
                         Heading
                     ------------------------------------------------- */}
-                    <div className="mb-7">
+                    <div className="mb-6">
 
                         <h1
                             className="
@@ -107,7 +172,7 @@ function Login() {
                                 lg:text-[44px]
                             "
                         >
-                            Welcome Back
+                            Create Account
                         </h1>
 
                         <p
@@ -121,23 +186,105 @@ function Login() {
                                 sm:leading-8
                             "
                         >
-                            Login to your account and get your
-                            cloth care, done right.
+                            Join VeeCleen and experience
+                            effortless cloth care.
                         </p>
 
                     </div>
 
 
                     {/* =================================================
-                        LOGIN FORM
+                        REGISTER FORM
                     ================================================= */}
                     <form
                         onSubmit={handleSubmit}
-                        className="w-full space-y-4"
+                        className="w-full space-y-3.5"
                     >
 
                         {/* ------------------------------------------------
                             Username
+                        ------------------------------------------------ */}
+                        <div className="relative">
+
+                            <User
+                                className="
+                                    absolute
+                                    left-4
+                                    top-1/2
+                                    z-10
+                                    -translate-y-1/2
+                                    text-blue-600
+                                "
+                                size={20}
+                            />
+
+                            <Input
+                                type="text"
+                                value={username}
+                                onChange={(event) =>
+                                    setUsername(event.target.value)
+                                }
+                                placeholder="Username"
+                                className="
+                                    h-14
+                                    rounded-2xl
+                                    border-slate-200
+                                    bg-white
+                                    pl-14
+                                    text-base
+                                    shadow-sm
+                                    placeholder:text-slate-400
+                                    focus-visible:ring-blue-500
+                                "
+                                required
+                            />
+
+                        </div>
+
+
+                        {/* ------------------------------------------------
+                            Email
+                        ------------------------------------------------ */}
+                        <div className="relative">
+
+                            <Mail
+                                className="
+                                    absolute
+                                    left-4
+                                    top-1/2
+                                    z-10
+                                    -translate-y-1/2
+                                    text-blue-600
+                                "
+                                size={20}
+                            />
+
+                            <Input
+                                type="email"
+                                value={email}
+                                onChange={(event) =>
+                                    setEmail(event.target.value)
+                                }
+                                placeholder="Email Address"
+                                className="
+                                    h-14
+                                    rounded-2xl
+                                    border-slate-200
+                                    bg-white
+                                    pl-14
+                                    text-base
+                                    shadow-sm
+                                    placeholder:text-slate-400
+                                    focus-visible:ring-blue-500
+                                "
+                                required
+                            />
+
+                        </div>
+
+
+                        {/* ------------------------------------------------
+                            Phone Number
                         ------------------------------------------------ */}
                         <div className="relative">
 
@@ -150,18 +297,18 @@ function Login() {
                                     -translate-y-1/2
                                     text-blue-600
                                 "
-                                size={21}
+                                size={20}
                             />
 
                             <Input
-                                type="text"
-                                value={username}
+                                type="tel"
+                                value={phoneNumber}
                                 onChange={(event) =>
-                                    setUsername(event.target.value)
+                                    setPhoneNumber(event.target.value)
                                 }
-                                placeholder="Username"
+                                placeholder="Phone Number"
                                 className="
-                                    h-16
+                                    h-14
                                     rounded-2xl
                                     border-slate-200
                                     bg-white
@@ -191,7 +338,7 @@ function Login() {
                                     -translate-y-1/2
                                     text-blue-600
                                 "
-                                size={21}
+                                size={20}
                             />
 
                             <Input
@@ -206,7 +353,7 @@ function Login() {
                                 }
                                 placeholder="Password"
                                 className="
-                                    h-16
+                                    h-14
                                     rounded-2xl
                                     border-slate-200
                                     bg-white
@@ -220,8 +367,7 @@ function Login() {
                                 required
                             />
 
-
-                            {/* Password visibility */}
+                            {/* Show / hide password */}
                             <button
                                 type="button"
                                 onClick={() =>
@@ -243,9 +389,9 @@ function Login() {
                                 }
                             >
                                 {showPassword ? (
-                                    <EyeOff size={22} />
+                                    <EyeOff size={21} />
                                 ) : (
-                                    <Eye size={22} />
+                                    <Eye size={21} />
                                 )}
                             </button>
 
@@ -253,59 +399,132 @@ function Login() {
 
 
                         {/* ------------------------------------------------
-                            Remember + Forgot Password
+                            Confirm Password
                         ------------------------------------------------ */}
-                        <div
-                            className="
-                                flex
-                                items-center
-                                justify-between
-                                gap-4
-                                pt-1
-                            "
-                        >
+                        <div className="relative">
 
-                            <label
+                            <LockKeyhole
                                 className="
-                                    flex
-                                    cursor-pointer
-                                    items-center
-                                    gap-2
-                                    text-sm
-                                    text-slate-600
-                                    sm:text-base
+                                    absolute
+                                    left-4
+                                    top-1/2
+                                    z-10
+                                    -translate-y-1/2
+                                    text-blue-600
                                 "
-                            >
+                                size={20}
+                            />
 
-                                <Checkbox
-                                    checked={rememberMe}
-                                    onCheckedChange={(checked) =>
-                                        setRememberMe(checked === true)
-                                    }
-                                />
+                            <Input
+                                type={
+                                    showPasswordConfirm
+                                        ? "text"
+                                        : "password"
+                                }
+                                value={passwordConfirm}
+                                onChange={(event) =>
+                                    setPasswordConfirm(event.target.value)
+                                }
+                                placeholder="Confirm Password"
+                                className="
+                                    h-14
+                                    rounded-2xl
+                                    border-slate-200
+                                    bg-white
+                                    pl-14
+                                    pr-14
+                                    text-base
+                                    shadow-sm
+                                    placeholder:text-slate-400
+                                    focus-visible:ring-blue-500
+                                "
+                                required
+                            />
 
-                                <span>
-                                    Remember me
-                                </span>
-
-                            </label>
-
-
+                            {/* Show / hide confirm password */}
                             <button
                                 type="button"
+                                onClick={() =>
+                                    setShowPasswordConfirm(
+                                        !showPasswordConfirm
+                                    )
+                                }
                                 className="
-                                    text-sm
-                                    font-medium
-                                    text-blue-600
+                                    absolute
+                                    right-4
+                                    top-1/2
+                                    -translate-y-1/2
+                                    text-slate-500
                                     transition
-                                    hover:text-blue-700
-                                    sm:text-base
+                                    hover:text-blue-600
                                 "
+                                aria-label={
+                                    showPasswordConfirm
+                                        ? "Hide password"
+                                        : "Show password"
+                                }
                             >
-                                Forgot Password?
+                                {showPasswordConfirm ? (
+                                    <EyeOff size={21} />
+                                ) : (
+                                    <Eye size={21} />
+                                )}
                             </button>
 
                         </div>
+
+
+                        {/* ------------------------------------------------
+                            Terms & Conditions
+                        ------------------------------------------------ */}
+                        <label
+                            className="
+                                flex
+                                cursor-pointer
+                                items-start
+                                gap-2.5
+                                pt-1
+                                text-sm
+                                leading-5
+                                text-slate-600
+                            "
+                        >
+
+                            <Checkbox
+                                checked={termsAccepted}
+                                onCheckedChange={(checked) =>
+                                    setTermsAccepted(checked === true)
+                                }
+                                className="mt-0.5"
+                            />
+
+                            <span>
+                                I agree to the{" "}
+                                <button
+                                    type="button"
+                                    className="
+                                        font-medium
+                                        text-blue-600
+                                        hover:text-blue-700
+                                    "
+                                >
+                                    Terms & Conditions
+                                </button>
+                                {" "}and{" "}
+                                <button
+                                    type="button"
+                                    className="
+                                        font-medium
+                                        text-blue-600
+                                        hover:text-blue-700
+                                    "
+                                >
+                                    Privacy Policy
+                                </button>
+                                .
+                            </span>
+
+                        </label>
 
 
                         {/* ------------------------------------------------
@@ -328,12 +547,13 @@ function Login() {
 
 
                         {/* ------------------------------------------------
-                            Login Button
+                            Register Button
                         ------------------------------------------------ */}
                         <Button
                             type="submit"
+                            disabled={loading}
                             className="
-                                h-16
+                                h-14
                                 w-full
                                 rounded-2xl
                                 bg-blue-600
@@ -342,17 +562,23 @@ function Login() {
                                 shadow-md
                                 transition
                                 hover:bg-blue-700
+                                disabled:cursor-not-allowed
+                                disabled:opacity-60
                             "
                         >
 
                             <span>
-                                Login
+                                {loading
+                                    ? "Creating Account..."
+                                    : "Create Account"}
                             </span>
 
-                            <ArrowRight
-                                className="ml-auto"
-                                size={25}
-                            />
+                            {!loading && (
+                                <ArrowRight
+                                    className="ml-auto"
+                                    size={24}
+                                />
+                            )}
 
                         </Button>
 
@@ -360,21 +586,21 @@ function Login() {
 
 
                     {/* -------------------------------------------------
-                        Create Account
+                        Login Link
                     ------------------------------------------------- */}
                     <p
                         className="
-                            mt-7
+                            mt-5
                             text-center
                             text-base
                             text-slate-600
                         "
                     >
-                        Don't have an account?{" "}
+                        Already have an account?{" "}
 
                         <button
                             type="button"
-                            onClick={() => navigate("/register")}
+                            onClick={() => navigate("/auth/login")}
                             className="
                                 font-semibold
                                 text-blue-600
@@ -382,7 +608,7 @@ function Login() {
                                 hover:text-blue-700
                             "
                         >
-                            Create Account
+                            Login
                         </button>
 
                     </p>
@@ -444,9 +670,7 @@ function Login() {
                         "
                     >
 
-                        {/* ------------------------------------------------
-                            Trusted & Safe
-                        ------------------------------------------------ */}
+                        {/* Trusted & Safe */}
                         <div
                             className="
                                 flex
@@ -499,9 +723,7 @@ function Login() {
                         </div>
 
 
-                        {/* ------------------------------------------------
-                            Fast & Reliable
-                        ------------------------------------------------ */}
+                        {/* Fast & Reliable */}
                         <div
                             className="
                                 flex
@@ -557,9 +779,7 @@ function Login() {
                         </div>
 
 
-                        {/* ------------------------------------------------
-                            Best Quality
-                        ------------------------------------------------ */}
+                        {/* Best Quality */}
                         <div
                             className="
                                 flex
@@ -621,4 +841,4 @@ function Login() {
     );
 }
 
-export default Login;
+export default Register;

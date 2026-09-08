@@ -8,20 +8,16 @@ class ShopAdmin(admin.ModelAdmin):
     list_display = (
         "shop_admin",
         "shop_name",
-        "description",
         "image",
         "contact_number",
         "address_line",
         "city",
-        "district",
         "state",
         "pincode",
         "opening_time",
         "closing_time",
         "is_approved",
         "is_open",
-        "created_at",
-        "updated_at",
     )
 
 

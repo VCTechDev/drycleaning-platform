@@ -20,6 +20,31 @@ export const login = async (
 };
 
 
+
+
+interface RegisterData {
+    username: string;
+    email: string;
+    phone_number: string;
+    password: string;
+    password_confirm: string;
+}
+
+interface RegisterResponse {
+    message: string;
+}
+
+export const register = async (
+    data: RegisterData
+): Promise<RegisterResponse> => {
+    const response = await api.post("/register/", data);
+
+    return response.data;
+};
+
+
+
+
 // This request must bypass our authenticated Axios instance.
 // Otherwise a failed refresh could trigger the refresh interceptor again.
 export const refreshAccessToken = async (refreshToken: string) => {
@@ -39,3 +64,5 @@ export const logout = () => {
     localStorage.removeItem("access_token");
     localStorage.removeItem("refresh_token");
 };
+
+

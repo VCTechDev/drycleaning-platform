@@ -1,5 +1,13 @@
 import { Link } from "react-router-dom";
-
+import { MapPin, ArrowRight } from "lucide-react";
+import {
+    Card,
+    CardContent,
+    CardFooter,
+    CardHeader,
+    CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 
 type ShopCardProps = {
@@ -13,22 +21,46 @@ type ShopCardProps = {
 function ShopCard({ id, shop_name, city, district }: ShopCardProps) {
 
     return (
-        <div
-            style={{
-                border: "1px solid #ccc",
-                padding: "16px",
-                marginBottom: "16px",
-                borderRadius: "8px",
-            }}
-        >
-            <h2>{shop_name}</h2>
+        <Card className="group overflow-hidden transition-all duration-200 hover:-translate-y-1 hover:shadow-lg">
 
-            <p>City: {city}</p>
+            {/* Shop image placeholder */}
+            <div className="flex h-40 items-center justify-center bg-muted">
+                <span className="text-sm text-muted-foreground">
+                    Shop Image
+                </span>
+            </div>
 
-            <p>District: {district}</p>
+            <CardHeader className="pb-3">
+                <CardTitle className="text-lg">
+                    {shop_name}
+                </CardTitle>
+            </CardHeader>
 
-            <Link to={`/customer/shops/${id}`}> <button>View Shop</button> </Link>
-        </div>
+            <CardContent className="space-y-2">
+
+                {/* City */}
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <MapPin className="h-4 w-4 shrink-0" />
+                    <span>
+                        {city}, {district}
+                    </span>
+                </div>
+
+            </CardContent>
+
+            <CardFooter>
+                <Link
+                    to={`/customer/shops/${id}`}
+                    className="w-full"
+                >
+                    <Button className="w-full">
+                        View Shop
+                        <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                    </Button>
+                </Link>
+            </CardFooter>
+
+        </Card>
     );
 }
 
