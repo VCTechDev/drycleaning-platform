@@ -131,7 +131,7 @@ function Home() {
 
                 {/* ================= MOBILE HERO ================= */}
                 <div
-                    className="relative min-h-[760px] w-full bg-cover bg-center bg-no-repeat md:hidden"
+                    className="relative min-h-190  w-full bg-cover bg-center bg-no-repeat md:hidden"
                     style={{
                         backgroundImage: "url('/images/home/cleaning-hero-mobile.png')",
                     }}
