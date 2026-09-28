@@ -9,6 +9,7 @@ import OrderTracking from "../pages/customer/OrderTracking";
 
 import ProtectedRoute from "../components/auth/ProtectedRoute";
 import Home from "@/pages/customer/Home";
+import PickupDetails from "@/pages/customer/PickupDetails";
 
 const CustomerRoutes = (
     <Route path="customer" element={<CustomerLayout />}>
@@ -30,6 +31,11 @@ const CustomerRoutes = (
             <Route
                 path="orders/:id/tracking"
                 element={<OrderTracking />}
+            />
+
+            <Route
+                path="/customer/shops/:id/pickup"
+                element={<PickupDetails />}
             />
 
         </Route>

@@ -1,10 +1,10 @@
+from django.db.models import Prefetch
 from rest_framework import mixins
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.viewsets import GenericViewSet
 from rest_framework.decorators import action
 from rest_framework.response import Response
-
-from orders.models import Order
+from orders.models import Order, OrderItem
 from orders.serializers import (
     CustomerOrderCreateSerializer,
     CustomerOrderListSerializer,
@@ -22,7 +22,18 @@ class CustomerOrderViewSet(
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Order.objects.filter(customer=self.request.user)
+        order_items = OrderItem.objects.select_related(
+            "shop_service__garment_type",
+        )
+
+        return (
+            Order.objects.filter(customer=self.request.user)
+            .select_related("shop")
+            .prefetch_related(
+                Prefetch("order_items", queryset=order_items),
+            )
+            .order_by("-created_at")
+        )
 
     def get_serializer_class(self):
 

@@ -110,6 +110,7 @@ class CustomerShopViewSet(ReadOnlyModelViewSet):
         serializer = CustomerShopServiceSerializer(
             queryset,
             many=True,
+            context={"request": request},
         )
 
         return Response(serializer.data)

@@ -50,7 +50,6 @@ class CustomerShopDetailSerializer(serializers.ModelSerializer):
 
 
 class CustomerShopServiceSerializer(serializers.ModelSerializer):
-
     service = serializers.CharField(
         source="service.service_name",
         read_only=True,
@@ -61,12 +60,26 @@ class CustomerShopServiceSerializer(serializers.ModelSerializer):
         read_only=True,
     )
 
+    garment_image = serializers.SerializerMethodField()
+
     class Meta:
         model = ShopService
         fields = (
             "id",
             "service",
             "garment_type",
+            "garment_image",
             "price",
             "estimated_days",
         )
+
+    def get_garment_image(self, obj):
+        if not obj.garment_type.image:
+            return None
+
+        request = self.context.get("request")
+
+        if request:
+            return request.build_absolute_uri(obj.garment_type.image.url)
+
+        return obj.garment_type.image.url

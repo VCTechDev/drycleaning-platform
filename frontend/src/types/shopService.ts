@@ -2,6 +2,7 @@ export interface ShopService {
     id: number;
     service: string;
     garment_type: string;
+    garment_image: string | null;
     price: string;
     estimated_days: number;
 }
