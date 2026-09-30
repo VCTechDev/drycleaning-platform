@@ -45,7 +45,7 @@ admin.site.register(Service, ServiceView)
 
 class ShopServiceView(admin.ModelAdmin):
 
-    list_display = ("shop", "service", "price", "estimated_days", "is_active")
+    list_display = ("shop", "service","garment_type", "price", "estimated_days", "is_active")
 
     list_filter=(
         "shop", 

@@ -1,8 +1,15 @@
 from rest_framework import serializers
+
 from shops.models import Shop, ShopService
 
 
 class CustomerShopListSerializer(serializers.ModelSerializer):
+
+    starting_price = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        read_only=True,
+    )
 
     class Meta:
         model = Shop
@@ -12,8 +19,12 @@ class CustomerShopListSerializer(serializers.ModelSerializer):
             "description",
             "district",
             "image",
+            "address_line",
             "city",
+            "opening_time",
+            "closing_time",
             "is_open",
+            "starting_price",
         )
 
 
@@ -39,11 +50,17 @@ class CustomerShopDetailSerializer(serializers.ModelSerializer):
 
 
 class CustomerShopServiceSerializer(serializers.ModelSerializer):
-
-    service = serializers.CharField(source="service.service_name", read_only=True)
-    garment_type = serializers.CharField(
-        source="garment_type.garment_name", read_only=True
+    service = serializers.CharField(
+        source="service.service_name",
+        read_only=True,
     )
+
+    garment_type = serializers.CharField(
+        source="garment_type.garment_name",
+        read_only=True,
+    )
+
+    garment_image = serializers.SerializerMethodField()
 
     class Meta:
         model = ShopService
@@ -51,6 +68,18 @@ class CustomerShopServiceSerializer(serializers.ModelSerializer):
             "id",
             "service",
             "garment_type",
+            "garment_image",
             "price",
             "estimated_days",
         )
+
+    def get_garment_image(self, obj):
+        if not obj.garment_type.image:
+            return None
+
+        request = self.context.get("request")
+
+        if request:
+            return request.build_absolute_uri(obj.garment_type.image.url)
+
+        return obj.garment_type.image.url
