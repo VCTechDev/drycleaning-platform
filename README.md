@@ -1,10 +1,3 @@
-Absolutely. I agree with you — the previous README is **too technical in some places and doesn't present VeeCleen the way I'd want an interviewer to see it**.
-
-Let's make it cleaner, more natural, and portfolio-focused while staying accurate to the current project.
-
-Below is the **complete README I'd manually use**.
-
-````markdown
 # VeeCleen
 
 VeeCleen is a multi-vendor dry-cleaning marketplace that connects customers with local dry-cleaning shops.
