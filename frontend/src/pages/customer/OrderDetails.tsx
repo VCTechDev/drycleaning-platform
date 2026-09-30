@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
     ArrowLeft,
+    ArrowRight,
     CheckCircle2,
     Hash,
     MapPin,
@@ -20,6 +21,7 @@ import {
 import {
     formatOrderAmount,
     formatOrderDate,
+    getPaymentStatusMeta,
     getOrderStatusMeta,
 } from "../../lib/orderDisplay";
 
@@ -114,6 +116,7 @@ function OrderDetails() {
     const isDelivered = order.order_status === "delivered";
     const isCancelled = order.order_status === "cancelled";
     const statusMeta = getOrderStatusMeta(order.order_status);
+    const paymentMeta = getPaymentStatusMeta(order.payment_status);
     const pickupAddress = order.pickup_address_line?.trim() || "Address unavailable";
     const pickupDetails = [
         order.pickup_city,
@@ -133,9 +136,7 @@ function OrderDetails() {
                         Back to Orders
                     </Link>
 
-                    
-
-                    {/* <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                    <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                         <div>
                             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#647092]">
                                 Order Details
@@ -150,11 +151,15 @@ function OrderDetails() {
                             </p>
                         </div>
 
-                        
-                    </div> */}
+                        <span
+                            className={`w-fit rounded-full px-4 py-2 text-sm font-semibold ${statusMeta.badgeClass}`}
+                        >
+                            {statusMeta.label}
+                        </span>
+                    </div>
                 </header>
 
-                <div className="mt-0 grid gap-5 lg:grid-cols-[minmax(0,1.55fr)_minmax(300px,0.85fr)]">
+                <div className="mt-8 grid gap-5 lg:grid-cols-[minmax(0,1.55fr)_minmax(300px,0.85fr)]">
                     <main className="space-y-5">
                         <Card className="gap-0 rounded-[22px] border border-[#E3E8F2] bg-white py-0 shadow-sm">
                             <div className="border-b border-[#EEF2F7] px-5 py-5 sm:px-6">
@@ -275,6 +280,30 @@ function OrderDetails() {
                                 </div>
                             </div>
                         </Card>
+
+                        <Card className="gap-0 rounded-[22px] border border-[#E3E8F2] bg-white py-0 shadow-sm">
+                            <div className="border-b border-[#EEF2F7] px-5 py-5 sm:px-6">
+                                <h2 className="font-heading text-xl font-semibold text-[#10194A]">
+                                    Pickup Address
+                                </h2>
+                            </div>
+
+                            <div className="space-y-1 px-5 py-5 text-sm leading-6 text-[#647092] sm:px-6">
+                                <p className="break-words font-medium text-[#10194A]">
+                                    {pickupAddress}
+                                </p>
+
+                                {pickupDetails.length > 0 ? (
+                                    pickupDetails.map((detail) => (
+                                        <p key={detail} className="break-words">
+                                            {detail}
+                                        </p>
+                                    ))
+                                ) : (
+                                    <p>Address details unavailable</p>
+                                )}
+                            </div>
+                        </Card>
                     </main>
 
                     <aside className="space-y-5">
@@ -342,11 +371,46 @@ function OrderDetails() {
                                         <p className="text-xs text-[#7B879B]">
                                             Status
                                         </p>
-                                        <p className="mt-1 font-semibold text-[#278251]">
+                                        <span
+                                            className={`mt-1 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusMeta.badgeClass}`}
+                                        >
                                             {statusMeta.label}
-                                        </p>
+                                        </span>
                                     </div>
                                 </div>
+
+                                <div className="flex items-start gap-3">
+                                    <Package className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                                    <div>
+                                        <p className="text-xs text-[#7B879B]">
+                                            Payment Status
+                                        </p>
+                                        <span
+                                            className={`mt-1 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${paymentMeta.badgeClass}`}
+                                        >
+                                            {paymentMeta.label}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-end justify-between gap-4 border-t border-[#EEF2F7] pt-5">
+                                    <span className="text-sm text-[#647092]">
+                                        Total amount
+                                    </span>
+                                    <span className="text-xl font-semibold text-[#10194A]">
+                                        {formatOrderAmount(order.total_amount)}
+                                    </span>
+                                </div>
+
+                                {!isCancelled && (
+                                    <Link
+                                        to={`/customer/orders/${id}/tracking`}
+                                        className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:bg-primary/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                                    >
+                                        Track Order
+                                        <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                                    </Link>
+                                )}
                             </div>
                         </Card>
 
@@ -386,28 +450,6 @@ function OrderDetails() {
                             </Card>
                         )}
 
-                        {/* <Card className="gap-0 rounded-[22px] border border-[#E3E8F2] bg-white py-0 shadow-sm">
-                            <div className="border-b border-[#EEF2F7] px-5 py-5 sm:px-6">
-                                <h2 className="font-heading text-xl font-semibold text-[#10194A]">
-                                    Pickup Address
-                                </h2>
-                            </div>
-
-                            <div className="space-y-1 px-5 py-5 text-sm leading-6 text-[#647092] sm:px-6">
-                                <p className="font-medium text-[#10194A]">
-                                    {pickupAddress}
-                                </p>
-                                {pickupDetails.length > 0 ? (
-                                    pickupDetails.map((detail) => (
-                                        <p key={detail}>{detail}</p>
-                                    ))
-                                ) : (
-                                    <p>Address details unavailable</p>
-                                )}
-                            </div>
-                        </Card> */}
-
-                        
                     </aside>
                 </div>
             </div>

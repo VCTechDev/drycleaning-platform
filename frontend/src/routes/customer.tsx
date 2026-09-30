@@ -6,6 +6,7 @@ import ShopDetail from "../pages/customer/ShopDetail";
 import MyOrders from "../pages/customer/MyOrders";
 import OrderDetail from "../pages/customer/OrderDetails";
 import OrderTracking from "../pages/customer/OrderTracking";
+import Profile from "../pages/customer/Profile";
 
 import ProtectedRoute from "../components/auth/ProtectedRoute";
 import Home from "@/pages/customer/Home";
@@ -25,6 +26,8 @@ const CustomerRoutes = (
             <Route path="shops/:id" element={<ShopDetail />} />
 
             <Route path="orders" element={<MyOrders />} />
+
+            <Route path="profile" element={<Profile />} />
 
             <Route path="orders/:id" element={<OrderDetail />} />
 

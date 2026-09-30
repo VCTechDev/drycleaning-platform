@@ -188,6 +188,17 @@ function CustomerLayout() {
                                         </div>
 
 
+                                        <div className="p-2 pb-0">
+                                            <NavLink
+                                                to="/customer/profile"
+                                                onClick={() => setProfileOpen(false)}
+                                                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-blue-50 hover:text-blue-600"
+                                            >
+                                                <UserRound className="h-4 w-4" aria-hidden="true" />
+                                                Profile
+                                            </NavLink>
+                                        </div>
+
                                         {/* Logout */}
                                         <div className="p-2">
 
@@ -311,6 +322,17 @@ function CustomerLayout() {
                                                     Orders
                                                 </Button>
                                             )}
+                                        </NavLink>
+
+
+                                        <NavLink to="/customer/profile">
+                                            <Button
+                                                variant="ghost"
+                                                className="w-full justify-start gap-2"
+                                            >
+                                                <UserRound className="h-4 w-4" aria-hidden="true" />
+                                                Profile
+                                            </Button>
                                         </NavLink>
 
 

@@ -59,6 +59,42 @@ export const getOrderStatusMeta = (status: string | null | undefined) => {
     );
 };
 
+const PAYMENT_STATUS_META: Record<string, OrderStatusMeta> = {
+    pending: {
+        label: "Pending",
+        badgeClass: "bg-amber-50 text-amber-700",
+    },
+    processing: {
+        label: "Processing",
+        badgeClass: "bg-blue-50 text-blue-700",
+    },
+    success: {
+        label: "Paid",
+        badgeClass: "bg-green-50 text-green-700",
+    },
+    failed: {
+        label: "Failed",
+        badgeClass: "bg-red-50 text-red-700",
+    },
+    cancelled: {
+        label: "Cancelled",
+        badgeClass: "bg-red-50 text-red-700",
+    },
+};
+
+export const getPaymentStatusMeta = (
+    status: string | null | undefined
+) => {
+    const normalizedStatus = status ?? "";
+
+    return (
+        PAYMENT_STATUS_META[normalizedStatus] ?? {
+            label: fallbackStatusLabel(normalizedStatus),
+            badgeClass: "bg-slate-100 text-slate-700",
+        }
+    );
+};
+
 const getValidDate = (value: string | null | undefined) => {
     if (!value) {
         return null;
@@ -108,5 +144,5 @@ export const formatOrderAmount = (
         return "Amount unavailable";
     }
 
-    return `₹${value}`;
+    return `\u20B9${value}`;
 };
