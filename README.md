@@ -1,259 +1,486 @@
-# 🧺 Dry Cleaning Marketplace
+Absolutely. I agree with you — the previous README is **too technical in some places and doesn't present VeeCleen the way I'd want an interviewer to see it**.
 
-A multi-vendor Dry Cleaning Marketplace built using **Django**, **Django REST Framework**, **PostgreSQL**, and **React**.
+Let's make it cleaner, more natural, and portfolio-focused while staying accurate to the current project.
 
-This project allows customers to browse nearby dry cleaning shops, compare services and prices, place orders, and track their order status. Shop owners can manage their shops and services, while platform administrators oversee the entire system.
+Below is the **complete README I'd manually use**.
 
----
+````markdown
+# VeeCleen
 
-# 🚀 Project Status
+VeeCleen is a multi-vendor dry-cleaning marketplace that connects customers with local dry-cleaning shops.
 
-> **Current Stage:** MVP Development
+Customers can discover nearby shops, browse the services offered by each shop, place pickup orders, track their orders, and manage their account from a single platform.
 
-This project is being developed incrementally, following a role-based architecture.
-
----
-
-# ✨ Features
-
-## 👤 Customer
-
-- JWT Authentication
-- Browse Shops
-- View Shop Details
-- View Shop Services
-- Place Orders
-- View My Orders
-- Track Orders
-
-## 🏪 Shop Admin
-
-- Manage Shop
-- Manage Services
-- Manage Orders
-- Update Order Status
-
-## 🚚 Delivery Agent
-
-- View Assigned Tasks
-- Pickup Orders
-- Deliver Orders
-- Update Delivery Status
-
-## 🛠 Platform Admin
-
-- Approve Shops
-- Manage Users
-- View All Orders
-- Manage Platform
+The project is being developed as a full-stack web application using Django REST Framework and React.
 
 ---
 
-# 🛠 Tech Stack
+## Project Status
 
-## Backend
+### Customer MVP — Completed
 
-- Python
-- Django
-- Django REST Framework
-- PostgreSQL
+The complete customer-facing MVP has been implemented and merged into the `main` branch.
 
-## Frontend
-
-- React
-- TypeScript
-- Vite
-- React Router
-- Axios
-- Zustand
-- Bootstrap
-
-## Tools
-
-- Git
-- GitHub
-- Postman
+The remaining parts of the marketplace, including shop administration, pickup/delivery operations, and platform administration, are being developed incrementally.
 
 ---
 
-# 📁 Project Structure
+## Customer MVP
 
+The current customer flow is:
+
+```text
+Home
+  ↓
+Browse Shops
+  ↓
+View Shop & Services
+  ↓
+Select Services
+  ↓
+Enter Pickup Details
+  ↓
+Place Order
+  ↓
+View My Orders
+  ↓
+View Order Details
+  ↓
+Track Order
+  ↓
+Manage Profile
+````
+
+### Customer Features
+
+* Customer registration and login
+* Browse approved dry-cleaning shops
+* Search and filter shops
+* Sort shops based on available options
+* View shop details
+* View services offered by a shop
+* Select services and garment quantities
+* Enter pickup address and details
+* Create an order
+* View customer orders
+* Search and filter orders
+* View complete order details
+* Track order progress
+* View order status history
+* View historical order item information
+* View and update customer profile
+* Responsive mobile-first interface
+
+---
+
+## Order Workflow
+
+The current order lifecycle is:
+
+```text
+Placed
+  ↓
+Accepted
+  ↓
+Pickup Scheduled
+  ↓
+Picked Up
+  ↓
+Processing
+  ↓
+Ready
+  ↓
+Delivered
 ```
-drycleaning-platform/
 
+An order can also be cancelled where permitted by the current backend workflow.
+
+The system maintains order status history so customers can see the progress of their orders.
+
+Order items preserve information such as:
+
+* Garment
+* Service
+* Quantity
+* Unit price
+* Line total
+
+This allows historical orders to remain consistent even if a shop later changes its current service information or pricing.
+
+---
+
+## Technology Stack
+
+### Backend
+
+* Python
+* Django
+* Django REST Framework
+* Django REST Framework Simple JWT
+* PostgreSQL
+
+### Frontend
+
+* React
+* TypeScript
+* Vite
+* React Router
+* Axios
+* Tailwind CSS
+* Lucide React
+
+---
+
+## Project Structure
+
+```text
+drycleaning-platform/
+│
 ├── backend/
 │   ├── accounts/
+│   ├── config/
+│   ├── logistics/
 │   ├── orders/
 │   ├── shops/
-│   ├── logistics/
-│   └── ...
+│   ├── users/
+│   ├── manage.py
+│   └── requirements.txt
 │
 ├── frontend/
+│   ├── public/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── layouts/
+│   │   ├── pages/
+│   │   ├── routes/
+│   │   ├── services/
+│   │   └── lib/
+│   ├── package.json
+│   └── vite.config.ts
 │
 └── README.md
 ```
 
 ---
 
-# 🏗 Architecture
+## Backend Architecture
 
-This project follows a **role-based API architecture**.
+The backend is built with Django and Django REST Framework.
 
-```
-Customer APIs
-/api/shops/
-/api/orders/
-/api/profile/
+The main backend domains currently include:
 
-Shop Admin APIs
-/api/shop/
-/api/shop/orders/
-/api/shop/services/
+### Users
 
-Delivery APIs
-/api/delivery/tasks/
+Handles the custom user model and application roles.
 
-Platform Admin APIs
-/api/admin/orders/
-/api/admin/shops/
-/api/admin/users/
-```
+Current roles include:
 
-Each app is organized by role.
+* Customer
+* Shop Admin
+* Delivery Agent
+* Platform Admin
 
-Example:
+### Accounts
 
-```
-shops/
+Handles customer registration and customer profile functionality.
 
-├── serializers/
-│   ├── customer.py
-│   ├── shop_admin.py
-│   └── platform_admin.py
-│
-├── views/
-│   ├── customer.py
-│   ├── shop_admin.py
-│   └── platform_admin.py
-```
+### Shops
 
----
+Handles:
 
-# 📋 MVP Progress
+* Shop information
+* Shop services
+* Garment/service information
+* Approved shop discovery
+* Shop filtering and search
 
-## 👤 Customer Module
+### Orders
 
-- [x] JWT Authentication
-- [x] Shop List API
-- [x] Shop Detail API
-- [x] Shop Services API
-- [x] Create Order API
-- [x] My Orders API
-- [x] Order Detail API
-- [x] Order Tracking API
-- [ ] Profile API
+Handles:
+
+* Order creation
+* Order items
+* Customer order listing
+* Order details
+* Order status
+* Order status history
+* Customer order tracking
+
+### Logistics
+
+Contains the domain models required for pickup and delivery operations.
+
+The broader shop, delivery, and platform administration workflows are still under development.
 
 ---
 
-## 🏪 Shop Admin Module
+## API
 
-- [ ] Dashboard
-- [ ] Shop Management
-- [ ] Service Management
-- [ ] Order Management
+The backend API is available under:
 
----
-
-## 🚚 Delivery Module
-
-- [ ] Delivery Tasks
-- [ ] Pickup
-- [ ] Delivery
-
----
-
-## 🛠 Platform Admin Module
-
-- [ ] Shop Approval
-- [ ] User Management
-- [ ] Order Management
-
----
-
-# 📌 Development Principles
-
-- Role-based API design
-- RESTful API structure
-- One serializer per responsibility
-- Least-privilege ViewSets
-- Backend-controlled business logic
-- Clean and maintainable architecture
-
----
-
-# 🚀 Getting Started
-
-Clone the repository
-
-```bash
-git clone <repository-url>
+```text
+/api/
 ```
 
-Move into the backend
+### Authentication
+
+| Method | Endpoint              | Description                      |
+| ------ | --------------------- | -------------------------------- |
+| POST   | `/api/token/`         | Obtain access and refresh tokens |
+| POST   | `/api/token/refresh/` | Refresh an access token          |
+| POST   | `/api/register/`      | Register a customer              |
+
+### Customer Profile
+
+| Method | Endpoint        | Description                             |
+| ------ | --------------- | --------------------------------------- |
+| GET    | `/api/profile/` | Retrieve authenticated customer profile |
+| PATCH  | `/api/profile/` | Update authenticated customer profile   |
+
+### Shops
+
+| Method | Endpoint                     | Description                           |
+| ------ | ---------------------------- | ------------------------------------- |
+| GET    | `/api/shops/`                | List approved shops                   |
+| GET    | `/api/shops/{id}/`           | Retrieve shop details                 |
+| GET    | `/api/shops/{id}/services/`  | Retrieve services available at a shop |
+| GET    | `/api/shops/filter-options/` | Retrieve shop filter options          |
+
+### Orders
+
+| Method | Endpoint                     | Description                          |
+| ------ | ---------------------------- | ------------------------------------ |
+| POST   | `/api/orders/`               | Create a customer order              |
+| GET    | `/api/orders/`               | List authenticated customer's orders |
+| GET    | `/api/orders/{id}/`          | Retrieve order details               |
+| GET    | `/api/orders/{id}/tracking/` | Retrieve order tracking information  |
+
+Customer order APIs are scoped to the authenticated customer.
+
+---
+
+## Authentication
+
+The application uses Django REST Framework Simple JWT for authentication.
+
+The frontend communicates with the backend through Axios and sends authenticated requests using Bearer access tokens.
+
+The authentication flow includes:
+
+```text
+Register
+   ↓
+Login
+   ↓
+Access Token
+   ↓
+Authenticated API Requests
+   ↓
+Refresh Token when required
+```
+
+---
+
+## Database
+
+PostgreSQL is used as the primary database.
+
+The project contains database models for domains including:
+
+* Users
+* Shops
+* Services
+* Shop Services
+* Orders
+* Order Items
+* Order Status History
+* Delivery Agents
+* Delivery Tasks
+
+---
+
+## Local Development
+
+### Backend Setup
+
+Navigate to the backend directory:
 
 ```bash
 cd backend
 ```
 
-Create virtual environment
+Create a virtual environment:
 
 ```bash
 python -m venv env
 ```
 
-Activate environment
+Activate the environment.
 
-Windows
+#### Windows
 
 ```bash
 env\Scripts\activate
 ```
 
-Install dependencies
+#### macOS / Linux
+
+```bash
+source env/bin/activate
+```
+
+Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Run migrations
+Configure the PostgreSQL database using your local development configuration.
+
+Apply migrations:
 
 ```bash
 python manage.py migrate
 ```
 
-Start server
+Start the Django development server:
 
 ```bash
 python manage.py runserver
 ```
 
----
+The backend will normally run at:
 
-# 📅 Roadmap
-
-- Complete Customer Module
-- Complete Shop Admin Module
-- Complete Delivery Module
-- Complete Platform Admin Module
-- React Frontend
-- Deployment
+```text
+http://127.0.0.1:8000/
+```
 
 ---
 
-# 👨‍💻 Author
+### Frontend Setup
 
-**Vyshak**
+Open a second terminal and navigate to the frontend:
 
-Python Backend Developer | Django | Django REST Framework
+```bash
+cd frontend
+```
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Configure the frontend API URL in `.env`:
+
+```env
+VITE_API_URL=http://127.0.0.1:8000/api
+```
+
+Start the Vite development server:
+
+```bash
+npm run dev
+```
+
+The frontend will normally be available at the local Vite development URL shown in the terminal.
+
+### Available Frontend Commands
+
+```bash
+npm run dev
+npm run build
+npm run lint
+npm run preview
+```
 
 ---
+
+## Development Workflow
+
+Development follows a feature-branch and Pull Request workflow.
+
+```text
+main
+  ↓
+Create feature branch
+  ↓
+Develop feature
+  ↓
+Commit changes
+  ↓
+Push feature branch
+  ↓
+Create Pull Request
+  ↓
+Review and verify
+  ↓
+Merge into main
+  ↓
+Delete feature branch
+```
+
+The repository uses `main` as the primary branch.
+
+Completed feature branches are removed after their changes have been merged.
+
+---
+
+## Current Progress
+
+### Completed
+
+* Customer authentication
+* Customer home page
+* Shop discovery
+* Shop search and filtering
+* Shop details
+* Service selection
+* Pickup details
+* Customer order creation
+* Customer order list
+* Order details
+* Order tracking
+* Customer profile
+* Customer frontend MVP
+
+### Planned / In Development
+
+* Shop Admin workflow
+* Shop order management
+* Shop service management
+* Pickup and delivery workflow
+* Delivery Agent workflow
+* Platform Admin workflow
+* Additional testing and production hardening
+
+---
+
+## Screenshots
+
+Customer-facing UI screenshots will be added to the repository as the project presentation is finalized.
+
+---
+
+## Project Goals
+
+The goal of VeeCleen is to provide a centralized marketplace where customers can discover local dry-cleaning businesses and manage their cleaning orders through a single platform.
+
+The project is also being developed as a practical full-stack application with a focus on:
+
+* REST API design
+* Role-based application architecture
+* Database relationships
+* Authentication and authorization
+* Order lifecycle management
+* Responsive frontend development
+* Clean separation between frontend and backend
+* Maintainable Git-based development workflow
+
+---
+
+## License
+
+This project is currently maintained as a personal development and portfolio project.
+
+```
