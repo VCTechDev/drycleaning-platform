@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { SubmitEvent } from "react";
+import { isAxiosError } from "axios";
 import { useNavigate } from "react-router-dom";
 import {
     ArrowRight,
@@ -73,12 +74,11 @@ function Register() {
             // Send the customer to Login so they can authenticate.
             navigate("/auth/login");
 
-        } catch (error: any) {
-            console.error(error);
+        } catch (error: unknown) {
 
             // Django validation errors can come as an object.
             // For now, show a simple message to the user.
-            if (error.response?.data) {
+            if (isAxiosError(error) && error.response?.data) {
                 const data = error.response.data;
 
                 if (typeof data === "object") {

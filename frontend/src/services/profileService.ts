@@ -4,11 +4,12 @@ export interface CustomerProfile {
     username: string;
     first_name: string;
     last_name: string;
-    email: string;
+    email: string | null;
     phone_number: string | null;
 }
 
 export interface UpdateCustomerProfileData {
+    username: string;
     first_name: string;
     last_name: string;
     email: string;

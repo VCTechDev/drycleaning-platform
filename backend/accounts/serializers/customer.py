@@ -1,9 +1,18 @@
 from rest_framework import serializers
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.contrib.auth.password_validation import validate_password
 
 from users.models import User
 
 
 class CustomerProfileSerializer(serializers.ModelSerializer):
+
+    username = serializers.CharField(required=False)
+    email = serializers.EmailField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+    )
 
     class Meta:
         model = User
@@ -15,14 +24,35 @@ class CustomerProfileSerializer(serializers.ModelSerializer):
             "phone_number",
         )
 
-        read_only_fields = ("username",)
+    def validate_username(self, value):
+        if User.objects.exclude(pk=self.instance.pk).filter(
+            username=value
+        ).exists():
+            raise serializers.ValidationError("Username already taken.")
+
+        return value
+
+    def validate_email(self, value):
+        if value in (None, ""):
+            return None
+
+        value = value.strip().lower()
+
+        if User.objects.exclude(pk=self.instance.pk).filter(
+            email__iexact=value
+        ).exists():
+            raise serializers.ValidationError(
+                "A user with that email already exists."
+            )
+
+        return value
 
 
 class CustomerRegistrationSerializer(serializers.ModelSerializer):
 
     password = serializers.CharField(
         write_only=True,
-        min_length=8
+        min_length=8,
     )
 
     password_confirm = serializers.CharField(
@@ -39,13 +69,37 @@ class CustomerRegistrationSerializer(serializers.ModelSerializer):
             "password_confirm",
         )
 
+        extra_kwargs = {
+            "email": {
+                "required": True,
+                "allow_blank": False,
+                "allow_null": False,
+            },
+        }
+
     def validate(self, attrs):
 
         # Make sure both password fields contain the same password.
-        if attrs["password"] != attrs["password_confirm"]:
+        if attrs.get("password") != attrs.get("password_confirm"):
             raise serializers.ValidationError({
                 "password": "Passwords do not match."
             })
+
+        try:
+            validate_password(attrs["password"])
+        except DjangoValidationError as error:
+            raise serializers.ValidationError({
+                "password": error.messages,
+            }) from error
+
+        email = attrs["email"].strip().lower()
+
+        if User.objects.filter(email__iexact=email).exists():
+            raise serializers.ValidationError({
+                "email": "A user with that email already exists."
+            })
+
+        attrs["email"] = email
 
         return attrs
 

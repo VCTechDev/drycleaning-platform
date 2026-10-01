@@ -3,6 +3,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.viewsets import GenericViewSet
 
 from accounts.serializers import CustomerProfileSerializer
+from users.permissions import IsCustomer
 
 
 class CustomerProfileViewSet(
@@ -11,7 +12,7 @@ class CustomerProfileViewSet(
     GenericViewSet,
 ):
 
-    permission_classes=[IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCustomer]
     serializer_class=CustomerProfileSerializer
 
     def get_object(self):

@@ -42,9 +42,14 @@ function Login() {
             localStorage.setItem("access_token", data.access);
             localStorage.setItem("refresh_token", data.refresh);
 
-            navigate("/customer/shops");
-        } catch (error) {
-            console.error(error);
+            if (data.role === "customer") {
+                navigate("/customer/shops");
+            } else {
+                navigate("/auth/role-pending", {
+                    state: { role: data.role },
+                });
+            }
+        } catch {
             setError("Invalid username or password.");
         }
     };
@@ -159,7 +164,7 @@ function Login() {
                                 onChange={(event) =>
                                     setUsername(event.target.value)
                                 }
-                                placeholder="Username"
+                                placeholder="Username or Email"
                                 className="
                                     h-16
                                     rounded-2xl
@@ -293,6 +298,7 @@ function Login() {
 
                             <button
                                 type="button"
+                                onClick={() => navigate("/auth/forgot-password")}
                                 className="
                                     text-sm
                                     font-medium

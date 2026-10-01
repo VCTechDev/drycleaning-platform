@@ -20,6 +20,7 @@ import {
 } from "../../services/profileService";
 
 interface ProfileForm {
+    username: string;
     first_name: string;
     last_name: string;
     email: string;
@@ -27,6 +28,7 @@ interface ProfileForm {
 }
 
 const emptyForm: ProfileForm = {
+    username: "",
     first_name: "",
     last_name: "",
     email: "",
@@ -34,6 +36,7 @@ const emptyForm: ProfileForm = {
 };
 
 const toForm = (profile: CustomerProfile): ProfileForm => ({
+    username: profile.username ?? "",
     first_name: profile.first_name ?? "",
     last_name: profile.last_name ?? "",
     email: profile.email ?? "",
@@ -187,6 +190,7 @@ function Profile() {
         setSuccess("");
 
         const payload: UpdateCustomerProfileData = {
+            username: form.username.trim(),
             first_name: form.first_name.trim(),
             last_name: form.last_name.trim(),
             email: form.email.trim(),
@@ -366,12 +370,12 @@ function Profile() {
                                     <label className="block text-sm font-medium text-[#10194A]">
                                         Username
                                         <Input
-                                            value={profile.username}
-                                            readOnly
+                                            value={form.username}
+                                            onChange={(event) => handleChange("username", event.target.value)}
                                             className="mt-2 h-11 rounded-xl bg-[#F5F7FB] text-[#7B879B]"
                                         />
                                         <span className="mt-1 block text-xs font-normal text-[#7B879B]">
-                                            Username cannot be changed.
+                                            Choose a unique username.
                                         </span>
                                     </label>
 
