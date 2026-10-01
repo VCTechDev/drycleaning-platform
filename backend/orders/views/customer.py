@@ -11,6 +11,7 @@ from orders.serializers import (
     CustomerOrderDetailSerializer,
     CustomerOrderTrackingSerializer,
 )
+from users.permissions import IsCustomer
 
 
 class CustomerOrderViewSet(
@@ -19,7 +20,7 @@ class CustomerOrderViewSet(
     mixins.RetrieveModelMixin,
     GenericViewSet,
 ):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCustomer]
 
     def get_queryset(self):
         order_items = OrderItem.objects.select_related(
