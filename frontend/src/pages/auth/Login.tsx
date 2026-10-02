@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { login } from "../../services/authService";
+import { useAuth } from "../../hooks/useAuth";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 function Login() {
     const navigate = useNavigate();
+    const setSession = useAuth().setSession;
 
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
@@ -39,11 +41,12 @@ function Login() {
                 password,
             });
 
-            localStorage.setItem("access_token", data.access);
-            localStorage.setItem("refresh_token", data.refresh);
+            setSession(data);
 
             if (data.role === "customer") {
                 navigate("/customer/shops");
+            } else if (data.role === "platform_admin") {
+                navigate("/platform");
             } else {
                 navigate("/auth/role-pending", {
                     state: { role: data.role },

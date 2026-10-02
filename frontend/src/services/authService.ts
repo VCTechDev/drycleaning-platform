@@ -1,5 +1,5 @@
-import axios from "axios";
 import api from "../lib/axios";
+import { clearAuthSession } from "../lib/authSession";
 
 export type UserRole =
     | "customer"
@@ -132,24 +132,10 @@ export const changePassword = async (
 
 
 
-// This request must bypass our authenticated Axios instance.
-// Otherwise a failed refresh could trigger the refresh interceptor again.
-export const refreshAccessToken = async (refreshToken: string) => {
-    const response = await axios.post(
-        `${import.meta.env.VITE_API_URL}/token/refresh/`,
-        {
-            refresh: refreshToken,
-        }
-    );
-
-    return response.data.access;
-};
-
+export { refreshAccessToken } from "../lib/tokenRefresh";
 
 export const logout = () => {
-    // Remove both JWT tokens from the browser.
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
+    clearAuthSession();
 };
 
 
