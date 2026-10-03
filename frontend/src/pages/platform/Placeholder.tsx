@@ -1,34 +1,25 @@
-import { useNavigate } from "react-router-dom";
+interface PlatformPlaceholderProps {
+    title: string;
+    description: string;
+}
 
-import { Button } from "@/components/ui/button";
-import { useAuth } from "../../hooks/useAuth";
-
-function PlatformPlaceholder() {
-    const navigate = useNavigate();
-    const logout = useAuth().logout;
-
-    const handleLogout = () => {
-        logout();
-        navigate("/auth/login", { replace: true });
-    };
+function PlatformPlaceholder({
+    title,
+    description,
+}: PlatformPlaceholderProps) {
 
     return (
-        <main className="flex min-h-screen items-center justify-center bg-slate-50 px-6 py-10">
-            <section className="w-full max-w-md rounded-3xl bg-white p-8 text-center shadow-sm">
-                <h1 className="text-2xl font-bold text-slate-900">
-                    Platform Admin workspace coming soon
-                </h1>
-                <p className="mt-3 text-sm leading-6 text-slate-500">
-                    Your Platform Admin account is authenticated. The workspace
-                    will be available in a future phase.
+        <main>
+            <section className="rounded-2xl border border-blue-100 bg-white p-6 shadow-sm sm:p-8">
+                <p className="text-sm font-semibold text-blue-600">
+                    Platform Admin
                 </p>
-                <Button
-                    type="button"
-                    onClick={handleLogout}
-                    className="mt-7 rounded-full bg-blue-600 hover:bg-blue-700"
-                >
-                    Log out
-                </Button>
+                <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
+                    {title}
+                </h1>
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500 sm:text-base">
+                    {description}
+                </p>
             </section>
         </main>
     );
