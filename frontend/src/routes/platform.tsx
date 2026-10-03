@@ -3,6 +3,7 @@ import { Route } from "react-router-dom";
 import ProtectedRoute from "../components/auth/ProtectedRoute";
 import RoleRoute from "../components/auth/RoleRoute";
 import PlatformAdminLayout from "../layouts/PlatformAdminLayout";
+import PlatformDashboard from "../pages/platform/Dashboard";
 import PlatformPlaceholder from "../pages/platform/Placeholder";
 
 const PlatformAdminRoutes = (
@@ -11,12 +12,7 @@ const PlatformAdminRoutes = (
             <Route path="platform" element={<PlatformAdminLayout />}>
                 <Route
                     index
-                    element={
-                        <PlatformPlaceholder
-                            title="Dashboard"
-                            description="Platform overview functionality will be introduced in a future phase."
-                        />
-                    }
+                    element={<PlatformDashboard />}
                 />
                 <Route
                     path="applications"
