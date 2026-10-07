@@ -127,6 +127,12 @@ class PublicShopApplicationViewSet(viewsets.GenericViewSet):
 
 class PlatformShopApplicationViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated, IsPlatformAdmin]
+    platform_statuses = (
+        ShopApplication.STATUS_SUBMITTED,
+        ShopApplication.STATUS_UNDER_REVIEW,
+        ShopApplication.STATUS_APPROVED,
+        ShopApplication.STATUS_REJECTED,
+    )
     queryset = ShopApplication.objects.select_related(
         "reviewed_by",
         "approved_user",
@@ -141,9 +147,13 @@ class PlatformShopApplicationViewSet(viewsets.ReadOnlyModelViewSet):
         return PlatformShopApplicationDetailSerializer
 
     def get_queryset(self):
-        queryset = super().get_queryset()
+        queryset = super().get_queryset().filter(
+            status__in=self.platform_statuses,
+        )
         application_status = self.request.query_params.get("status")
         if application_status:
+            if application_status not in self.platform_statuses:
+                raise ValidationError({"status": "Unsupported application status."})
             queryset = queryset.filter(status=application_status)
         return queryset
 

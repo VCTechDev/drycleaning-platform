@@ -248,14 +248,111 @@ class PlatformAdminFoundationTests(APITestCase):
     def test_invalid_application_transitions_are_rejected(self):
         application, _ = self.create_application()
         self.authenticate(self.platform_admin)
+        detail = self.client.get(
+            f"/api/platform/shop-applications/{application['public_id']}/"
+        )
+        self.assertEqual(detail.status_code, 404)
         response = self.client.post(
             f"/api/platform/shop-applications/{application['public_id']}/approve/"
         )
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 404)
         self.assertEqual(
             ShopApplication.objects.get(public_id=application["public_id"]).status,
             ShopApplication.STATUS_DRAFT,
         )
+
+    @patch("shops.services.send_mail", return_value=1)
+    def test_platform_application_list_excludes_drafts_and_filters_submitted_statuses(
+        self,
+        mock_send_mail,
+    ):
+        draft, _ = self.create_application(
+            email="draft-list@example.com",
+            shop_name="Draft List Cleaners",
+        )
+
+        submitted, submitted_token = self.create_application(
+            email="submitted-list@example.com",
+            shop_name="Submitted List Cleaners",
+        )
+        self.client.post(
+            f"/api/shop-applications/{submitted['public_id']}/submit/",
+            HTTP_X_APPLICATION_TOKEN=submitted_token,
+        )
+
+        under_review_id = self.create_under_review_application(
+            email="review-list@example.com",
+            shop_name="Review List Cleaners",
+        )
+
+        approved_id = self.create_under_review_application(
+            email="approved-list@example.com",
+            shop_name="Approved List Cleaners",
+        )
+        self.client.post(
+            f"/api/platform/shop-applications/{approved_id}/approve/"
+        )
+
+        rejected_id = self.create_under_review_application(
+            email="rejected-list@example.com",
+            shop_name="Rejected List Cleaners",
+        )
+        self.client.post(
+            f"/api/platform/shop-applications/{rejected_id}/reject/",
+            {"rejection_reason": "Rejected for list filtering test."},
+            format="json",
+        )
+
+        self.authenticate(self.platform_admin)
+        response = self.client.get("/api/platform/shop-applications/")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["count"], 4)
+        self.assertEqual(
+            {item["status"] for item in response.data["results"]},
+            {
+                ShopApplication.STATUS_SUBMITTED,
+                ShopApplication.STATUS_UNDER_REVIEW,
+                ShopApplication.STATUS_APPROVED,
+                ShopApplication.STATUS_REJECTED,
+            },
+        )
+        self.assertNotIn(
+            draft["public_id"],
+            {item["public_id"] for item in response.data["results"]},
+        )
+
+        for application_status in (
+            ShopApplication.STATUS_SUBMITTED,
+            ShopApplication.STATUS_UNDER_REVIEW,
+            ShopApplication.STATUS_APPROVED,
+            ShopApplication.STATUS_REJECTED,
+        ):
+            with self.subTest(application_status=application_status):
+                filtered = self.client.get(
+                    "/api/platform/shop-applications/",
+                    {"status": application_status},
+                )
+                self.assertEqual(filtered.status_code, 200, filtered.data)
+                self.assertEqual(filtered.data["count"], 1)
+                self.assertEqual(
+                    filtered.data["results"][0]["status"],
+                    application_status,
+                )
+
+        draft_filter = self.client.get(
+            "/api/platform/shop-applications/",
+            {"status": ShopApplication.STATUS_DRAFT},
+        )
+        self.assertEqual(draft_filter.status_code, 400)
+        self.assertIn("status", draft_filter.data)
+
+        unknown_filter = self.client.get(
+            "/api/platform/shop-applications/",
+            {"status": "unknown"},
+        )
+        self.assertEqual(unknown_filter.status_code, 400)
+        self.assertIn("status", unknown_filter.data)
+        self.assertEqual(mock_send_mail.call_count, 2)
 
     @patch("shops.services.send_mail", return_value=1)
     def test_approval_creates_unusable_shop_admin_and_shop(self, mock_send_mail):
