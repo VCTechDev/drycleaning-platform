@@ -5,6 +5,8 @@ import RoleRoute from "../components/auth/RoleRoute";
 import PlatformAdminLayout from "../layouts/PlatformAdminLayout";
 import PlatformDashboard from "../pages/platform/Dashboard";
 import PlatformPlaceholder from "../pages/platform/Placeholder";
+import ShopApplicationDetail from "../pages/platform/ShopApplicationDetail";
+import ShopApplications from "../pages/platform/ShopApplications";
 
 const PlatformAdminRoutes = (
     <Route element={<ProtectedRoute />}>
@@ -16,12 +18,11 @@ const PlatformAdminRoutes = (
                 />
                 <Route
                     path="applications"
-                    element={
-                        <PlatformPlaceholder
-                            title="Shop Applications"
-                            description="Shop application review functionality will be introduced in a future phase."
-                        />
-                    }
+                    element={<ShopApplications />}
+                />
+                <Route
+                    path="applications/:publicId"
+                    element={<ShopApplicationDetail />}
                 />
                 <Route
                     path="shops"
