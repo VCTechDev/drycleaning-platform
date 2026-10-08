@@ -1,6 +1,7 @@
 import { Routes } from "react-router-dom";
 import PublicRoutes from "./public";
 import CustomerRoutes from "./customer";
+import PlatformAdminRoutes from "./platform";
 
 
 
@@ -10,6 +11,7 @@ function AppRoutes(){
         <Routes>
             {PublicRoutes}
             {CustomerRoutes}
+            {PlatformAdminRoutes}
         </Routes>
     );
 }

@@ -8,17 +8,14 @@ import {
     SheetTitle,
     SheetTrigger,
 } from "@/components/ui/sheet";
-import { logout } from "../services/authService";
+import { useAuth } from "../hooks/useAuth";
 import { useState } from "react";
 
 function CustomerLayout() {
 
     const [profileOpen, setProfileOpen] = useState(false);
     const navigate = useNavigate();
-
-    const isAuthenticated = Boolean(
-        localStorage.getItem("access_token")
-    );
+    const { isAuthenticated, logout } = useAuth();
 
     const handleLogout = () => {
         logout();

@@ -1,7 +1,8 @@
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
-import { logout, type UserRole } from "../../services/authService";
+import { type UserRole } from "../../services/authService";
+import { useAuth } from "../../hooks/useAuth";
 
 const roleLabels: Record<UserRole, string> = {
     customer: "Customer",
@@ -13,6 +14,7 @@ const roleLabels: Record<UserRole, string> = {
 function RolePending() {
     const navigate = useNavigate();
     const location = useLocation();
+    const logout = useAuth().logout;
     const routeState = location.state as { role?: UserRole } | null;
     const role = routeState?.role;
 

@@ -121,6 +121,22 @@ class Order(models.Model):
         auto_now=True,
     )
 
+    class Meta:
+        indexes = [
+            models.Index(
+                fields=("order_status", "created_at"),
+                name="orders_status_created_idx",
+            ),
+            models.Index(
+                fields=("payment_status", "created_at"),
+                name="orders_payment_created_idx",
+            ),
+            models.Index(
+                fields=("created_at",),
+                name="orders_created_at_idx",
+            ),
+        ]
+
     def create_pickup_task(self, old_status):
 
         from logistics.models import DeliveryTask
