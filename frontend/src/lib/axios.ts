@@ -1,5 +1,11 @@
 import axios from "axios";
 
+import { getStoredAccessToken } from "./authSession";
+import {
+    refreshAccessToken,
+    SessionChangedError,
+} from "./tokenRefresh";
+
 const api = axios.create({
     baseURL: import.meta.env.VITE_API_URL,
     headers: {
@@ -9,7 +15,7 @@ const api = axios.create({
 
 api.interceptors.request.use(
     (config) => {
-        const accessToken = localStorage.getItem("access_token");
+        const accessToken = getStoredAccessToken();
 
         if (accessToken) {
             config.headers.Authorization = `Bearer ${accessToken}`;
@@ -31,45 +37,22 @@ api.interceptors.response.use(
 
         if (
             error.response?.status === 401 &&
+            originalRequest &&
             !originalRequest._retry
         ) {
             originalRequest._retry = true;
 
-            const refreshToken = localStorage.getItem("refresh_token");
-
-            if (!refreshToken) {
-                localStorage.removeItem("access_token");
-                localStorage.removeItem("refresh_token");
-
-                window.location.href = "/auth/login";
-
-                return Promise.reject(error);
-            }
-
             try {
-                const response = await axios.post(
-                    `${import.meta.env.VITE_API_URL}/token/refresh/`,
-                    {
-                        refresh: refreshToken,
-                    }
-                );
-
-                const newAccessToken = response.data.access;
-
-                localStorage.setItem(
-                    "access_token",
-                    newAccessToken
-                );
+                const newAccessToken = await refreshAccessToken();
 
                 originalRequest.headers.Authorization =
                     `Bearer ${newAccessToken}`;
 
                 return api(originalRequest);
             } catch (refreshError) {
-                localStorage.removeItem("access_token");
-                localStorage.removeItem("refresh_token");
-
-                window.location.href = "/auth/login";
+                if (!(refreshError instanceof SessionChangedError)) {
+                    window.location.href = "/auth/login";
+                }
 
                 return Promise.reject(refreshError);
             }

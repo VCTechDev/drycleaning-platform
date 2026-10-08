@@ -9,6 +9,7 @@ import OrderTracking from "../pages/customer/OrderTracking";
 import Profile from "../pages/customer/Profile";
 
 import ProtectedRoute from "../components/auth/ProtectedRoute";
+import RoleRoute from "../components/auth/RoleRoute";
 import Home from "@/pages/customer/Home";
 import PickupDetails from "@/pages/customer/PickupDetails";
 
@@ -20,6 +21,7 @@ const CustomerRoutes = (
 
         {/* Protected Customer Pages */}
         <Route element={<ProtectedRoute />}>
+            <Route element={<RoleRoute allowedRoles={["customer"]} />}>
 
             <Route path="shops" element={<ShopList />} />
 
@@ -40,6 +42,8 @@ const CustomerRoutes = (
                 path="/customer/shops/:id/pickup"
                 element={<PickupDetails />}
             />
+
+            </Route>
 
         </Route>
 
