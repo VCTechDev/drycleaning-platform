@@ -1,4 +1,4 @@
-from datetime import time
+from datetime import time, timedelta
 from decimal import Decimal
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
@@ -13,6 +13,7 @@ from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import close_old_connections, connection
 from django.test import TransactionTestCase, override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient, APITestCase
 from PIL import Image
 
@@ -95,6 +96,40 @@ class PlatformAdminFoundationTests(APITestCase):
 
     def authenticate(self, user):
         self.client.force_authenticate(user=user)
+
+    def create_platform_shop(
+        self,
+        *,
+        username,
+        email,
+        shop_name,
+        city="Kochi",
+        district="Ernakulam",
+        state="Kerala",
+        is_approved=True,
+        is_open=False,
+    ):
+        shop_admin = User.objects.create_user(
+            username=username,
+            email=email,
+            password=self.password,
+            role="shop_admin",
+        )
+        return Shop.objects.create(
+            shop_admin=shop_admin,
+            shop_name=shop_name,
+            description="Platform shop test shop",
+            contact_number="9876543211",
+            address_line="Test Road",
+            city=city,
+            district=district,
+            state=state,
+            pincode="682003",
+            opening_time=time(9),
+            closing_time=time(18),
+            is_approved=is_approved,
+            is_open=is_open,
+        )
 
     def create_application(self, **overrides):
         payload = {**self.application_payload, **overrides}
@@ -244,6 +279,273 @@ class PlatformAdminFoundationTests(APITestCase):
             self.client.get("/api/platform/shop-applications/").status_code,
             200,
         )
+
+    def test_platform_shop_search_filters_and_approved_scope(self):
+        alpha = self.create_platform_shop(
+            username="alpha_shop_admin",
+            email="alpha-admin@example.com",
+            shop_name="Alpha Wash",
+            city="Aluva",
+            is_open=True,
+        )
+        beta = self.create_platform_shop(
+            username="beta_shop_admin",
+            email="beta-admin@example.com",
+            shop_name="Beta Garments",
+            city="Kollam",
+            district="Kollam",
+        )
+        hidden = self.create_platform_shop(
+            username="hidden_shop_admin",
+            email="hidden-admin@example.com",
+            shop_name="Hidden Alpha Wash",
+            city="Aluva",
+            is_approved=False,
+            is_open=True,
+        )
+
+        self.authenticate(self.platform_admin)
+        listed = self.client.get("/api/platform/shops/")
+        self.assertEqual(listed.status_code, 200, listed.data)
+        self.assertEqual(listed.data["count"], 3)
+        self.assertNotIn(hidden.id, {item["id"] for item in listed.data["results"]})
+
+        for search_term, expected_ids in (
+            ("alpha wash", {alpha.id}),
+            ("aluva", {alpha.id}),
+            ("KOLLAM", {beta.id}),
+            ("kerala", {self.shop.id, alpha.id, beta.id}),
+            ("ALPHA_SHOP_ADMIN", {alpha.id}),
+            ("ALPHA-ADMIN@EXAMPLE.COM", {alpha.id}),
+        ):
+            with self.subTest(search_term=search_term):
+                response = self.client.get(
+                    "/api/platform/shops/",
+                    {"search": search_term},
+                )
+                self.assertEqual(response.status_code, 200, response.data)
+                self.assertEqual(
+                    {item["id"] for item in response.data["results"]},
+                    expected_ids,
+                )
+
+        district_filtered = self.client.get(
+            "/api/platform/shops/",
+            {"district": "Kollam"},
+        )
+        self.assertEqual(district_filtered.status_code, 200)
+        self.assertEqual(
+            {item["id"] for item in district_filtered.data["results"]},
+            {beta.id},
+        )
+
+        city_filtered = self.client.get(
+            "/api/platform/shops/",
+            {"city": "Aluva"},
+        )
+        self.assertEqual(city_filtered.status_code, 200)
+        self.assertEqual(
+            {item["id"] for item in city_filtered.data["results"]},
+            {alpha.id},
+        )
+
+        open_filtered = self.client.get(
+            "/api/platform/shops/",
+            {"is_open": "true"},
+        )
+        self.assertEqual(open_filtered.status_code, 200)
+        self.assertEqual(
+            {item["id"] for item in open_filtered.data["results"]},
+            {alpha.id},
+        )
+
+        closed_filtered = self.client.get(
+            "/api/platform/shops/",
+            {"is_open": "false"},
+        )
+        self.assertEqual(closed_filtered.status_code, 200)
+        self.assertEqual(
+            {item["id"] for item in closed_filtered.data["results"]},
+            {self.shop.id, beta.id},
+        )
+
+        for invalid_value in ("yes", "1", "TRUE"):
+            with self.subTest(invalid_value=invalid_value):
+                response = self.client.get(
+                    "/api/platform/shops/",
+                    {"is_open": invalid_value},
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("is_open", response.data)
+
+    def test_platform_shop_ordering_and_pagination(self):
+        older = self.create_platform_shop(
+            username="older_shop_admin",
+            email="older-admin@example.com",
+            shop_name="Zeta Cleaners",
+        )
+        newer = self.create_platform_shop(
+            username="newer_shop_admin",
+            email="newer-admin@example.com",
+            shop_name="Alpha Cleaners",
+        )
+        Shop.objects.filter(pk=older.pk).update(
+            created_at=timezone.now() - timedelta(days=1),
+        )
+        Shop.objects.filter(pk=newer.pk).update(created_at=timezone.now())
+
+        self.authenticate(self.platform_admin)
+        ascending = self.client.get(
+            "/api/platform/shops/",
+            {"ordering": "shop_name"},
+        )
+        descending = self.client.get(
+            "/api/platform/shops/",
+            {"ordering": "-shop_name"},
+        )
+        self.assertEqual(ascending.status_code, 200, ascending.data)
+        self.assertEqual(descending.status_code, 200, descending.data)
+        self.assertEqual(
+            [item["shop_name"] for item in ascending.data["results"]],
+            ["Alpha Cleaners", "Existing Cleaners", "Zeta Cleaners"],
+        )
+        self.assertEqual(
+            [item["shop_name"] for item in descending.data["results"]],
+            ["Zeta Cleaners", "Existing Cleaners", "Alpha Cleaners"],
+        )
+
+        same_name_older = self.create_platform_shop(
+            username="same_name_older_admin",
+            email="same-name-older@example.com",
+            shop_name="Same Name Cleaners",
+        )
+        same_name_newer = self.create_platform_shop(
+            username="same_name_newer_admin",
+            email="same-name-newer@example.com",
+            shop_name="Same Name Cleaners",
+        )
+        Shop.objects.filter(pk=same_name_older.pk).update(
+            created_at=timezone.now() - timedelta(days=2),
+        )
+        Shop.objects.filter(pk=same_name_newer.pk).update(
+            created_at=timezone.now() - timedelta(days=1),
+        )
+
+        multi_field = self.client.get(
+            "/api/platform/shops/",
+            {"ordering": "shop_name,-created_at"},
+        )
+        self.assertEqual(multi_field.status_code, 200, multi_field.data)
+        self.assertEqual(
+            [item["shop_name"] for item in multi_field.data["results"]],
+            [
+                "Alpha Cleaners",
+                "Existing Cleaners",
+                "Same Name Cleaners",
+                "Same Name Cleaners",
+                "Zeta Cleaners",
+            ],
+        )
+        same_name_ids = [
+            item["id"]
+            for item in multi_field.data["results"]
+            if item["shop_name"] == "Same Name Cleaners"
+        ]
+        self.assertEqual(
+            same_name_ids,
+            [same_name_newer.id, same_name_older.id],
+        )
+
+        deterministic = self.client.get(
+            "/api/platform/shops/",
+            {"ordering": "shop_name"},
+        )
+        self.assertEqual(deterministic.status_code, 200, deterministic.data)
+        deterministic_same_name_ids = [
+            item["id"]
+            for item in deterministic.data["results"]
+            if item["shop_name"] == "Same Name Cleaners"
+        ]
+        self.assertEqual(
+            deterministic_same_name_ids,
+            sorted([same_name_older.id, same_name_newer.id]),
+        )
+
+        created_ascending = self.client.get(
+            "/api/platform/shops/",
+            {"ordering": "created_at"},
+        )
+        created_descending = self.client.get(
+            "/api/platform/shops/",
+            {"ordering": "-created_at"},
+        )
+        self.assertEqual(created_ascending.status_code, 200)
+        self.assertEqual(created_descending.status_code, 200)
+        self.assertEqual(
+            [item["id"] for item in created_ascending.data["results"]],
+            list(
+                Shop.objects.filter(is_approved=True)
+                .order_by("created_at")
+                .values_list("id", flat=True)
+            ),
+        )
+        self.assertEqual(
+            [item["id"] for item in created_descending.data["results"]],
+            list(
+                Shop.objects.filter(is_approved=True)
+                .order_by("-created_at")
+                .values_list("id", flat=True)
+            ),
+        )
+
+        unsupported = self.client.get(
+            "/api/platform/shops/",
+            {"ordering": "city"},
+        )
+        self.assertEqual(unsupported.status_code, 400)
+        self.assertIn("ordering", unsupported.data)
+
+        for index in range(11):
+            self.create_platform_shop(
+                username=f"pagination_shop_admin_{index}",
+                email=f"pagination-{index}@example.com",
+                shop_name=f"Pagination Shop {index:02d}",
+                city="Thiruvalla",
+                is_open=True,
+            )
+        first_page = self.client.get(
+            "/api/platform/shops/",
+            {
+                "search": "pagination shop",
+                "city": "Thiruvalla",
+                "is_open": "true",
+            },
+        )
+        self.assertEqual(first_page.status_code, 200, first_page.data)
+        self.assertEqual(first_page.data["count"], 11)
+        self.assertEqual(len(first_page.data["results"]), 10)
+        self.assertIsNotNone(first_page.data["next"])
+
+        second_page = self.client.get(first_page.data["next"])
+        self.assertEqual(second_page.status_code, 200, second_page.data)
+        self.assertEqual(len(second_page.data["results"]), 1)
+
+    def test_platform_shop_detail_and_operational_status(self):
+        self.authenticate(self.platform_admin)
+        detail = self.client.get(f"/api/platform/shops/{self.shop.id}/")
+        self.assertEqual(detail.status_code, 200, detail.data)
+        self.assertEqual(detail.data["shop_admin_email"], self.shop_admin.email)
+        self.assertTrue(detail.data["is_approved"])
+
+        updated = self.client.post(
+            f"/api/platform/shops/{self.shop.id}/operational-status/",
+            {"is_open": True},
+            format="json",
+        )
+        self.assertEqual(updated.status_code, 200, updated.data)
+        self.assertTrue(updated.data["is_open"])
+        self.shop.refresh_from_db()
+        self.assertTrue(self.shop.is_open)
 
     def test_invalid_application_transitions_are_rejected(self):
         application, _ = self.create_application()

@@ -8,6 +8,7 @@ from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -34,6 +35,14 @@ from shops.services import (
 )
 from users.models import User
 from users.permissions import IsPlatformAdmin
+
+
+class PlatformShopOrderingFilter(OrderingFilter):
+    def get_ordering(self, request, queryset, view):
+        ordering = super().get_ordering(request, queryset, view)
+        if request.query_params.get("ordering") and ordering:
+            ordering = (*ordering, "id")
+        return ordering
 
 
 class PublicShopApplicationViewSet(viewsets.GenericViewSet):
@@ -147,8 +156,12 @@ class PlatformShopApplicationViewSet(viewsets.ReadOnlyModelViewSet):
         return PlatformShopApplicationDetailSerializer
 
     def get_queryset(self):
-        queryset = super().get_queryset().filter(
-            status__in=self.platform_statuses,
+        queryset = (
+            super()
+            .get_queryset()
+            .filter(
+                status__in=self.platform_statuses,
+            )
         )
         application_status = self.request.query_params.get("status")
         if application_status:
@@ -211,14 +224,18 @@ class PlatformShopApplicationViewSet(viewsets.ReadOnlyModelViewSet):
             )
         except (ShopApplication.DoesNotExist, ValueError) as exc:
             raise ValidationError({"status": str(exc)})
-        return Response({
-            "application": PlatformShopApplicationDetailSerializer(application).data,
-            "notification": {
-                "status": notification.status,
-                "delivered": notification.status == "sent",
-                "attempts": notification.attempts,
-            },
-        })
+        return Response(
+            {
+                "application": PlatformShopApplicationDetailSerializer(
+                    application
+                ).data,
+                "notification": {
+                    "status": notification.status,
+                    "delivered": notification.status == "sent",
+                    "attempts": notification.attempts,
+                },
+            }
+        )
 
 
 class PlatformServiceRequestViewSet(viewsets.ReadOnlyModelViewSet):
@@ -258,9 +275,7 @@ class PlatformServiceRequestViewSet(viewsets.ReadOnlyModelViewSet):
                 service_request = ServiceRequest.objects.select_for_update().get(
                     pk=self.get_object().pk
                 )
-                service_request.transition_to(
-                    ServiceRequest.STATUS_UNDER_REVIEW
-                )
+                service_request.transition_to(ServiceRequest.STATUS_UNDER_REVIEW)
                 service_request.save(update_fields=["status", "updated_at"])
         except (ServiceRequest.DoesNotExist, ValueError) as exc:
             raise ValidationError({"status": str(exc)})
@@ -277,9 +292,7 @@ class PlatformServiceRequestViewSet(viewsets.ReadOnlyModelViewSet):
             raise ValidationError({"status": str(exc)})
         return Response(
             {
-                "request": PlatformServiceRequestDetailSerializer(
-                    service_request
-                ).data,
+                "request": PlatformServiceRequestDetailSerializer(service_request).data,
                 "service_id": service.pk,
             }
         )
@@ -327,6 +340,58 @@ class PlatformServiceViewSet(viewsets.ModelViewSet):
 class PlatformShopViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated, IsPlatformAdmin]
     queryset = Shop.objects.filter(is_approved=True).select_related("shop_admin")
+    filter_backends = [SearchFilter, PlatformShopOrderingFilter]
+    search_fields = (
+        "shop_name",
+        "city",
+        "district",
+        "state",
+        "shop_admin__username",
+        "shop_admin__email",
+    )
+    ordering_fields = ("shop_name", "created_at")
+    ordering = ("shop_name", "id")
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+
+        if "is_open" in self.request.query_params:
+            is_open = self.request.query_params["is_open"]
+            if is_open not in {"true", "false"}:
+                raise ValidationError(
+                    {"is_open": "is_open must be either 'true' or 'false'."}
+                )
+            queryset = queryset.filter(is_open=is_open == "true")
+
+        district = self.request.query_params.get("district")
+        if district:
+            queryset = queryset.filter(district=district)
+
+        city = self.request.query_params.get("city")
+        if city:
+            queryset = queryset.filter(city=city)
+
+        ordering = self.request.query_params.get("ordering")
+        if ordering:
+            requested_terms = ordering.split(",")
+
+            valid_terms = {
+                field for name in self.ordering_fields for field in (name, f"-{name}")
+            }
+
+            if any(not term or term not in valid_terms for term in requested_terms):
+                supported_fields = ", ".join(self.ordering_fields)
+                raise ValidationError(
+                    {
+                        "ordering": (
+                            "Invalid ordering. Use supported fields "
+                            "with an optional leading minus sign. "
+                            f"Supported fields are: {supported_fields}."
+                        )
+                    }
+                )
+
+        return queryset
 
     def get_serializer_class(self):
         if self.action == "list":
@@ -340,7 +405,7 @@ class PlatformShopViewSet(viewsets.ReadOnlyModelViewSet):
         shop = self.get_object()
         shop.is_open = serializer.validated_data["is_open"]
         shop.save(update_fields=["is_open", "updated_at"])
-        return Response(PlatformAdminShopDetailSerializer(shop).data)
+        return Response(self.get_serializer(shop).data)
 
 
 class PlatformDashboardView(APIView):
@@ -396,9 +461,9 @@ class PlatformDashboardView(APIView):
             .order_by("date")
         )
 
-        gross_order_value = non_cancelled_orders.aggregate(
-            total=Sum("total_amount")
-        )["total"] or 0
+        gross_order_value = (
+            non_cancelled_orders.aggregate(total=Sum("total_amount"))["total"] or 0
+        )
 
         top_shops = list(
             non_cancelled_orders.values("shop_id", "shop__shop_name")
@@ -409,8 +474,7 @@ class PlatformDashboardView(APIView):
             OrderItem.objects.filter(
                 item_status="active",
                 order__order_status__in=[
-                    value for value, _ in Order.ORDER_STATUS
-                    if value != "cancelled"
+                    value for value, _ in Order.ORDER_STATUS if value != "cancelled"
                 ],
             )
             .values("service_name_snapshot")
@@ -421,31 +485,35 @@ class PlatformDashboardView(APIView):
             .order_by("-item_count", "service_name_snapshot")[:10]
         )
 
-        return Response({
-            "operational": {
-                "total_orders": orders.count(),
-                "pending_orders": orders.filter(order_status="placed").count(),
-                "active_orders": orders.filter(order_status__in=active_statuses).count(),
-                "completed_orders": orders.filter(order_status="delivered").count(),
-                "cancelled_orders": orders.filter(order_status="cancelled").count(),
-                "pending_shop_applications": ShopApplication.objects.filter(
-                    status__in=["submitted", "under_review"]
-                ).count(),
-                "approved_shops": Shop.objects.filter(is_approved=True).count(),
-                "pending_service_requests": ServiceRequest.objects.filter(
-                    status__in=["pending", "under_review"]
-                ).count(),
-                "active_shops": Shop.objects.filter(
-                    is_approved=True,
-                    is_open=True,
-                ).count(),
-            },
-            "business": {
-                "gross_order_value": gross_order_value,
-                "order_count_trend": order_trend,
-                "customer_growth": customer_trend,
-                "shop_growth": shop_trend,
-                "top_shops": top_shops,
-                "popular_services": popular_services,
-            },
-        })
+        return Response(
+            {
+                "operational": {
+                    "total_orders": orders.count(),
+                    "pending_orders": orders.filter(order_status="placed").count(),
+                    "active_orders": orders.filter(
+                        order_status__in=active_statuses
+                    ).count(),
+                    "completed_orders": orders.filter(order_status="delivered").count(),
+                    "cancelled_orders": orders.filter(order_status="cancelled").count(),
+                    "pending_shop_applications": ShopApplication.objects.filter(
+                        status__in=["submitted", "under_review"]
+                    ).count(),
+                    "approved_shops": Shop.objects.filter(is_approved=True).count(),
+                    "pending_service_requests": ServiceRequest.objects.filter(
+                        status__in=["pending", "under_review"]
+                    ).count(),
+                    "active_shops": Shop.objects.filter(
+                        is_approved=True,
+                        is_open=True,
+                    ).count(),
+                },
+                "business": {
+                    "gross_order_value": gross_order_value,
+                    "order_count_trend": order_trend,
+                    "customer_growth": customer_trend,
+                    "shop_growth": shop_trend,
+                    "top_shops": top_shops,
+                    "popular_services": popular_services,
+                },
+            }
+        )
