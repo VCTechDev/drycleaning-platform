@@ -7,6 +7,8 @@ import PlatformDashboard from "../pages/platform/Dashboard";
 import PlatformPlaceholder from "../pages/platform/Placeholder";
 import ShopApplicationDetail from "../pages/platform/ShopApplicationDetail";
 import ShopApplications from "../pages/platform/ShopApplications";
+import PlatformShopDetail from "../pages/platform/PlatformShopDetail";
+import PlatformShops from "../pages/platform/PlatformShops";
 
 const PlatformAdminRoutes = (
     <Route element={<ProtectedRoute />}>
@@ -26,12 +28,11 @@ const PlatformAdminRoutes = (
                 />
                 <Route
                     path="shops"
-                    element={
-                        <PlatformPlaceholder
-                            title="Shops"
-                            description="Shop management functionality will be introduced in a future phase."
-                        />
-                    }
+                    element={<PlatformShops />}
+                />
+                <Route
+                    path="shops/:id"
+                    element={<PlatformShopDetail />}
                 />
                 <Route
                     path="services"
