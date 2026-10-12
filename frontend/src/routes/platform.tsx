@@ -5,6 +5,9 @@ import RoleRoute from "../components/auth/RoleRoute";
 import PlatformAdminLayout from "../layouts/PlatformAdminLayout";
 import PlatformDashboard from "../pages/platform/Dashboard";
 import PlatformPlaceholder from "../pages/platform/Placeholder";
+import PlatformServices from "../pages/platform/PlatformServices";
+import PlatformServiceRequestDetail from "../pages/platform/PlatformServiceRequestDetail";
+import PlatformServiceRequests from "../pages/platform/PlatformServiceRequests";
 import ShopApplicationDetail from "../pages/platform/ShopApplicationDetail";
 import ShopApplications from "../pages/platform/ShopApplications";
 import PlatformShopDetail from "../pages/platform/PlatformShopDetail";
@@ -36,21 +39,15 @@ const PlatformAdminRoutes = (
                 />
                 <Route
                     path="services"
-                    element={
-                        <PlatformPlaceholder
-                            title="Services"
-                            description="Service management functionality will be introduced in a future phase."
-                        />
-                    }
+                    element={<PlatformServices />}
                 />
                 <Route
                     path="service-requests"
-                    element={
-                        <PlatformPlaceholder
-                            title="Service Requests"
-                            description="Service request workflows will be introduced in a future phase."
-                        />
-                    }
+                    element={<PlatformServiceRequests />}
+                />
+                <Route
+                    path="service-requests/:id"
+                    element={<PlatformServiceRequestDetail />}
                 />
                 <Route
                     path="orders"

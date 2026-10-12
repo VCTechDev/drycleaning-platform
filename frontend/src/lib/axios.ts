@@ -17,6 +17,12 @@ api.interceptors.request.use(
     (config) => {
         const accessToken = getStoredAccessToken();
 
+        if (config.data instanceof FormData && config.headers) {
+            // Axios/the browser must generate the multipart boundary. The
+            // instance default is JSON for ordinary API requests.
+            config.headers.delete("Content-Type");
+        }
+
         if (accessToken) {
             config.headers.Authorization = `Bearer ${accessToken}`;
         }
