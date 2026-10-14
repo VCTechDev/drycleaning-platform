@@ -137,12 +137,21 @@ export const formatOrderDateTime = (
     }).format(date);
 };
 
+export type OrderAmount = number | string;
+
 export const formatOrderAmount = (
-    value: string | null | undefined
+    value: OrderAmount | null | undefined
 ) => {
-    if (!value || !value.trim() || !Number.isFinite(Number(value))) {
+    const normalizedValue =
+        typeof value === "number"
+            ? String(value)
+            : typeof value === "string"
+                ? value.trim()
+                : "";
+
+    if (!normalizedValue || !Number.isFinite(Number(normalizedValue))) {
         return "Amount unavailable";
     }
 
-    return `\u20B9${value}`;
+    return `\u20B9${normalizedValue}`;
 };
