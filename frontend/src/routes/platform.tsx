@@ -4,12 +4,13 @@ import ProtectedRoute from "../components/auth/ProtectedRoute";
 import RoleRoute from "../components/auth/RoleRoute";
 import PlatformAdminLayout from "../layouts/PlatformAdminLayout";
 import PlatformDashboard from "../pages/platform/Dashboard";
-import PlatformPlaceholder from "../pages/platform/Placeholder";
 import PlatformServices from "../pages/platform/PlatformServices";
 import PlatformServiceRequestDetail from "../pages/platform/PlatformServiceRequestDetail";
 import PlatformServiceRequests from "../pages/platform/PlatformServiceRequests";
 import PlatformOrderDetail from "../pages/platform/PlatformOrderDetail";
 import PlatformOrders from "../pages/platform/PlatformOrders";
+import PlatformUserDetail from "../pages/platform/PlatformUserDetail";
+import PlatformUsers from "../pages/platform/PlatformUsers";
 import ShopApplicationDetail from "../pages/platform/ShopApplicationDetail";
 import ShopApplications from "../pages/platform/ShopApplications";
 import PlatformShopDetail from "../pages/platform/PlatformShopDetail";
@@ -61,12 +62,11 @@ const PlatformAdminRoutes = (
                 />
                 <Route
                     path="users"
-                    element={
-                        <PlatformPlaceholder
-                            title="Users"
-                            description="User management functionality will be introduced in a future phase."
-                        />
-                    }
+                    element={<PlatformUsers />}
+                />
+                <Route
+                    path="users/:id"
+                    element={<PlatformUserDetail />}
                 />
             </Route>
         </Route>
