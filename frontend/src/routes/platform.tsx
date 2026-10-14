@@ -8,6 +8,8 @@ import PlatformPlaceholder from "../pages/platform/Placeholder";
 import PlatformServices from "../pages/platform/PlatformServices";
 import PlatformServiceRequestDetail from "../pages/platform/PlatformServiceRequestDetail";
 import PlatformServiceRequests from "../pages/platform/PlatformServiceRequests";
+import PlatformOrderDetail from "../pages/platform/PlatformOrderDetail";
+import PlatformOrders from "../pages/platform/PlatformOrders";
 import ShopApplicationDetail from "../pages/platform/ShopApplicationDetail";
 import ShopApplications from "../pages/platform/ShopApplications";
 import PlatformShopDetail from "../pages/platform/PlatformShopDetail";
@@ -51,12 +53,11 @@ const PlatformAdminRoutes = (
                 />
                 <Route
                     path="orders"
-                    element={
-                        <PlatformPlaceholder
-                            title="Orders"
-                            description="Order management functionality will be introduced in a future phase."
-                        />
-                    }
+                    element={<PlatformOrders />}
+                />
+                <Route
+                    path="orders/:id"
+                    element={<PlatformOrderDetail />}
                 />
                 <Route
                     path="users"
