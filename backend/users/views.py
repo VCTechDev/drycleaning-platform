@@ -1,6 +1,7 @@
 from rest_framework import viewsets
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
+from django.db.models import Q
 
 from users.models import User
 from users.permissions import IsPlatformAdmin
@@ -14,7 +15,7 @@ class PlatformAdminUserViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         queryset = User.objects.filter(
             role__in=("customer", "shop_admin", "delivery_agent")
-        ).order_by("-date_joined")
+        ).select_related("shop").order_by("-date_joined")
 
         role = self.request.query_params.get("role")
         if role:
@@ -22,10 +23,19 @@ class PlatformAdminUserViewSet(viewsets.ReadOnlyModelViewSet):
                 raise ValidationError({"role": "Unsupported user role."})
             queryset = queryset.filter(role=role)
 
+        is_active = self.request.query_params.get("is_active")
+        if is_active is not None:
+            normalized_is_active = is_active.lower()
+            if normalized_is_active not in {"true", "false"}:
+                raise ValidationError(
+                    {"is_active": "Use true or false."}
+                )
+            queryset = queryset.filter(
+                is_active=normalized_is_active == "true"
+            )
+
         search = self.request.query_params.get("search")
         if search:
-            from django.db.models import Q
-
             queryset = queryset.filter(
                 Q(username__icontains=search)
                 | Q(email__icontains=search)
