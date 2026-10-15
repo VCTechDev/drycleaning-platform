@@ -1,4 +1,5 @@
 import { Menu, LogOut } from "lucide-react";
+import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 
@@ -43,21 +44,27 @@ function AdminHeader({
                 </div>
 
                 <div className="flex shrink-0 items-center gap-3">
-                    <div className="hidden text-right sm:block">
-                        <p className="text-sm font-semibold text-slate-900">
-                            {username}
-                        </p>
-                        <p className="max-w-52 truncate text-xs text-slate-500">
-                            {email ?? "Platform Admin"}
-                        </p>
-                    </div>
-
-                    <div
-                        className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-sm font-semibold text-blue-700"
-                        aria-hidden="true"
+                    <Link
+                        to="/platform/profile"
+                        aria-label="My Profile"
+                        className="group -m-1.5 flex items-center gap-3 rounded-xl p-1.5 transition hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                     >
-                        {username.slice(0, 1).toUpperCase() || "P"}
-                    </div>
+                        <div className="hidden min-w-0 text-right sm:block">
+                            <p className="max-w-52 truncate text-sm font-semibold text-slate-900 transition group-hover:text-blue-700">
+                                {username}
+                            </p>
+                            <p className="max-w-52 truncate text-xs text-slate-500">
+                                {email ?? "Platform Admin"}
+                            </p>
+                        </div>
+
+                        <div
+                            className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-sm font-semibold text-blue-700 transition group-hover:bg-blue-100"
+                            aria-hidden="true"
+                        >
+                            {username.slice(0, 1).toUpperCase() || "P"}
+                        </div>
+                    </Link>
 
                     <Button
                         type="button"

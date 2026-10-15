@@ -4,6 +4,7 @@ from accounts.views import (
     CustomerProfileViewSet,
     CustomerRegistrationView,
     ForgotPasswordView,
+    PlatformAdminProfileViewSet,
     ResetPasswordView,
     VerifyOTPView,
 )
@@ -15,10 +16,22 @@ customer_profile = CustomerProfileViewSet.as_view(
     }
 )
 
+platform_admin_profile = PlatformAdminProfileViewSet.as_view(
+    {
+        "get": "retrieve",
+        "patch": "partial_update",
+    }
+)
+
 
 urlpatterns = [
     path("register/", CustomerRegistrationView.as_view(), name="customer-register"),
     path("profile/", customer_profile, name="customer-profile"),
+    path(
+        "platform/profile/",
+        platform_admin_profile,
+        name="platform-admin-profile",
+    ),
     path(
         "auth/forgot-password/",
         ForgotPasswordView.as_view(),

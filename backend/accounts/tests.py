@@ -1,3 +1,4 @@
+import json
 import re
 from datetime import timedelta
 from unittest.mock import patch
@@ -433,6 +434,243 @@ class AuthenticationTests(APITestCase):
 
         legacy_user.refresh_from_db()
         self.assertIsNone(legacy_user.email)
+
+
+class PlatformAdminProfileTests(APITestCase):
+    endpoint = "/api/platform/profile/"
+    password = "StrongPassword123!"
+
+    def setUp(self):
+        self.platform_admin = User.objects.create_user(
+            username="platform_profile_admin",
+            email="platform-profile@example.com",
+            password=self.password,
+            role="platform_admin",
+            first_name="Platform",
+            last_name="Admin",
+            phone_number="9876543210",
+        )
+        self.other_platform_admin = User.objects.create_user(
+            username="other_platform_admin",
+            email="other-platform@example.com",
+            password=self.password,
+            role="platform_admin",
+            first_name="Other",
+            last_name="Admin",
+        )
+        self.customer = User.objects.create_user(
+            username="profile_customer",
+            email="profile-customer@example.com",
+            password=self.password,
+            role="customer",
+        )
+        self.shop_admin = User.objects.create_user(
+            username="profile_shop_admin",
+            email="profile-shop-admin@example.com",
+            password=self.password,
+            role="shop_admin",
+        )
+        self.delivery_agent = User.objects.create_user(
+            username="profile_delivery_agent",
+            email="profile-delivery-agent@example.com",
+            password=self.password,
+            role="delivery_agent",
+        )
+
+    def authenticate(self, user=None):
+        self.client.force_authenticate(user=user)
+
+    def test_platform_admin_can_get_and_patch_own_profile(self):
+        self.authenticate(self.platform_admin)
+
+        retrieved = self.client.get(self.endpoint)
+        updated = self.client.patch(
+            self.endpoint,
+            {
+                "first_name": "Updated",
+                "last_name": "Administrator",
+                "email": "updated-platform@example.com",
+                "phone_number": "9123456780",
+            },
+            format="json",
+        )
+
+        self.assertEqual(retrieved.status_code, 200, retrieved.data)
+        self.assertEqual(
+            set(retrieved.data),
+            {"username", "first_name", "last_name", "email", "phone_number"},
+        )
+        self.assertEqual(retrieved.data["username"], self.platform_admin.username)
+        self.assertEqual(updated.status_code, 200, updated.data)
+        self.assertEqual(updated.data["first_name"], "Updated")
+        self.assertEqual(updated.data["last_name"], "Administrator")
+        self.assertEqual(updated.data["email"], "updated-platform@example.com")
+        self.assertEqual(updated.data["phone_number"], "9123456780")
+
+        self.platform_admin.refresh_from_db()
+        self.assertEqual(self.platform_admin.first_name, "Updated")
+        self.assertEqual(self.platform_admin.last_name, "Administrator")
+        self.assertEqual(self.platform_admin.email, "updated-platform@example.com")
+        self.assertEqual(self.platform_admin.phone_number, "9123456780")
+
+    def test_anonymous_and_non_platform_roles_are_denied(self):
+        self.authenticate()
+        self.assertEqual(self.client.get(self.endpoint).status_code, 401)
+        self.assertEqual(
+            self.client.patch(
+                self.endpoint,
+                {"first_name": "Anonymous"},
+                format="json",
+            ).status_code,
+            401,
+        )
+
+        for user in (self.customer, self.shop_admin, self.delivery_agent):
+            self.authenticate(user)
+            with self.subTest(user=user.username):
+                self.assertEqual(self.client.get(self.endpoint).status_code, 403)
+                self.assertEqual(
+                    self.client.patch(
+                        self.endpoint,
+                        {"first_name": "Not Allowed"},
+                        format="json",
+                    ).status_code,
+                    403,
+                )
+
+    def test_updates_only_affect_the_authenticated_platform_admin(self):
+        self.authenticate(self.platform_admin)
+
+        response = self.client.patch(
+            self.endpoint,
+            {"first_name": "Only This Admin"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.platform_admin.refresh_from_db()
+        self.other_platform_admin.refresh_from_db()
+        self.assertEqual(self.platform_admin.first_name, "Only This Admin")
+        self.assertEqual(self.other_platform_admin.first_name, "Other")
+
+    def test_username_is_read_only_and_protected_fields_are_not_writable(self):
+        self.authenticate(self.platform_admin)
+
+        username_response = self.client.patch(
+            self.endpoint,
+            {"username": "renamed_platform_admin"},
+            format="json",
+        )
+        protected_response = self.client.patch(
+            self.endpoint,
+            {
+                "role": "customer",
+                "is_active": False,
+                "is_staff": True,
+                "is_superuser": True,
+                "password": "ChangedPassword123!",
+                "groups": [],
+                "permissions": [],
+                "date_joined": "2000-01-01T00:00:00Z",
+            },
+            format="json",
+        )
+
+        self.assertEqual(username_response.status_code, 200, username_response.data)
+        self.assertEqual(
+            username_response.data["username"],
+            self.platform_admin.username,
+        )
+        self.assertEqual(protected_response.status_code, 200, protected_response.data)
+
+        self.platform_admin.refresh_from_db()
+        self.assertEqual(self.platform_admin.username, "platform_profile_admin")
+        self.assertEqual(self.platform_admin.role, "platform_admin")
+        self.assertTrue(self.platform_admin.is_active)
+        self.assertFalse(self.platform_admin.is_staff)
+        self.assertFalse(self.platform_admin.is_superuser)
+        self.assertTrue(self.platform_admin.check_password(self.password))
+
+    def test_invalid_and_duplicate_emails_are_rejected(self):
+        self.authenticate(self.platform_admin)
+
+        invalid = self.client.patch(
+            self.endpoint,
+            {"email": "not-an-email"},
+            format="json",
+        )
+        duplicate = self.client.patch(
+            self.endpoint,
+            {"email": self.other_platform_admin.email.upper()},
+            format="json",
+        )
+
+        self.assertEqual(invalid.status_code, 400, invalid.data)
+        self.assertEqual(duplicate.status_code, 400, duplicate.data)
+        self.assertEqual(
+            duplicate.data["email"][0],
+            "A user with that email already exists.",
+        )
+
+    def test_profile_response_excludes_sensitive_and_admin_fields(self):
+        self.authenticate(self.platform_admin)
+
+        response = self.client.get(self.endpoint)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        body = json.dumps(response.data).lower()
+        for sensitive_field in (
+            "password",
+            "token",
+            "otp",
+            "role",
+            "is_active",
+            "is_staff",
+            "is_superuser",
+            "groups",
+            "permissions",
+            "date_joined",
+        ):
+            self.assertNotIn(sensitive_field, response.data)
+            self.assertNotIn(sensitive_field, body)
+
+    def test_existing_customer_profile_behavior_remains_customer_only(self):
+        self.authenticate(self.customer)
+
+        customer_profile = self.client.get("/api/profile/")
+        platform_profile = self.client.get(self.endpoint)
+
+        self.assertEqual(customer_profile.status_code, 200, customer_profile.data)
+        self.assertEqual(platform_profile.status_code, 403, platform_profile.data)
+
+    def test_platform_admin_can_use_existing_password_change_endpoint(self):
+        self.authenticate(self.platform_admin)
+
+        wrong_current = self.client.post(
+            "/api/auth/change-password/",
+            {
+                "current_password": "WrongPassword123!",
+                "new_password": "NewStrongPassword123!",
+                "password_confirm": "NewStrongPassword123!",
+            },
+            format="json",
+        )
+        success = self.client.post(
+            "/api/auth/change-password/",
+            {
+                "current_password": self.password,
+                "new_password": "NewStrongPassword123!",
+                "password_confirm": "NewStrongPassword123!",
+            },
+            format="json",
+        )
+
+        self.assertEqual(wrong_current.status_code, 400, wrong_current.data)
+        self.assertEqual(success.status_code, 200, success.data)
+        self.platform_admin.refresh_from_db()
+        self.assertTrue(
+            self.platform_admin.check_password("NewStrongPassword123!")
+        )
 
 
 class CustomerRoleAuthorizationTests(APITestCase):
