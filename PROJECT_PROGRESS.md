@@ -3,9 +3,11 @@
 
 ## Project Status
 
-**Current milestone: Customer Frontend MVP completed and merged into `main`.**
+**Latest completed milestone: Platform Admin MVP completed and merged into `main`.**
 
-The customer-facing marketplace flow is complete. The remaining shop-admin, delivery, and platform-admin workflows are planned for subsequent development phases.
+**Next active milestone: Shop Admin (Milestone 3).** The milestone numbers preserve the project's roadmap history; Platform Admin was completed ahead of the currently active Shop Admin milestone.
+
+The customer-facing marketplace flow and Platform Admin workspace are complete. Shop Admin, Pickup & Delivery, and production hardening remain in development.
 
 ---
 
@@ -136,7 +138,7 @@ Order Details
 Order Tracking
   ↓
 Customer Profile
-````
+```
 
 The Customer Frontend MVP was developed on the `customer-frontend` feature branch, reviewed through a Pull Request, merged into `main`, and the completed feature branch was deleted.
 
@@ -145,6 +147,8 @@ The Customer Frontend MVP was developed on the `customer-frontend` feature branc
 # Shop Admin
 
 **Status: 🚧 Planned / In Development**
+
+Some backend service-management and service-request foundations exist, but the Shop Admin frontend, order APIs, and complete workflow remain unfinished.
 
 * [ ] Shop authentication
 * [ ] Shop dashboard
@@ -163,6 +167,8 @@ The Customer Frontend MVP was developed on the `customer-frontend` feature branc
 
 **Status: 🚧 Planned / In Development**
 
+Domain models exist in `backend/logistics`, but pickup/delivery APIs and frontend workflows are not implemented.
+
 * [ ] Pickup team workflow
 * [ ] Delivery agent workflow
 * [ ] Pickup assignment
@@ -177,16 +183,17 @@ The Customer Frontend MVP was developed on the `customer-frontend` feature branc
 
 # Platform Admin
 
-**Status: 🚧 Planned / In Development**
+**Status: ✅ Completed and merged into `main`**
 
-* [ ] Admin authentication
-* [ ] Admin dashboard
-* [ ] Shop approval management
-* [ ] Service management
-* [ ] Service request management
-* [ ] User management
-* [ ] Order management
-* [ ] Platform-level monitoring
+* [x] Admin authentication and Platform Admin role protection
+* [x] Admin dashboard
+* [x] Shop approval management
+* [x] Service management
+* [x] Service request management
+* [x] User monitoring
+* [x] Order monitoring and server-side analytics
+* [x] Platform-level monitoring
+* [x] Platform Admin profile management
 
 ---
 
@@ -194,14 +201,16 @@ The Customer Frontend MVP was developed on the `customer-frontend` feature branc
 
 **Status: 🚧 Ongoing**
 
+The latest observed backend suite result was 79 passing tests. The frontend production build passed. Frontend lint still has an existing error in `frontend/src/components/ui/button.tsx` and warnings in `frontend/src/pages/customer/PickupDetails.tsx`; these results were recorded previously and were not rerun for this documentation update. The backend and API/role validation checklists describe implemented and explicitly tested cases; they do not claim exhaustive endpoint or invalid-input coverage.
+
 * [x] Frontend production build verification
 * [x] Customer frontend route verification
 * [x] Customer API integration verification
-* [ ] Backend automated tests
+* [x] Backend automated tests for implemented and tested modules
 * [ ] Frontend automated tests
-* [ ] API validation tests
-* [ ] Role-based permission tests
-* [ ] Order workflow tests
+* [x] API validation tests for implemented and tested cases
+* [x] Role-based permission tests for implemented and tested APIs
+* [ ] Shop Admin order lifecycle/status mutation tests
 * [ ] End-to-end customer workflow testing
 * [ ] Production hardening
 
@@ -270,9 +279,9 @@ Completed feature branches are deleted after their changes are merged.
 
 ## Milestone 5 — Platform Admin
 
-**Status: ⏳ Planned**
+**Status: ✅ Completed**
 
 ## Milestone 6 — Testing & Production Hardening
 
-**Status: ⏳ Planned**
+**Status: 🚧 Ongoing**
 
