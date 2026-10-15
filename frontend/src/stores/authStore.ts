@@ -112,6 +112,9 @@ export interface AuthState {
     isLoading: boolean;
     hasRestoredSession: boolean;
     setSession: (loginResponse: LoginResponse) => void;
+    updateAuthenticatedUser: (
+        updates: Pick<AuthenticatedUser, "username" | "email">
+    ) => void;
     restoreSession: () => Promise<void>;
     logout: () => void;
 }
@@ -155,6 +158,29 @@ export const useAuthStore = create<AuthState>((set, get) => {
                 isLoading: false,
                 hasRestoredSession: true,
             });
+        },
+
+        updateAuthenticatedUser: (updates) => {
+            const { user, role } = get();
+
+            if (!user || !role) {
+                return;
+            }
+
+            const updatedUser = {
+                ...user,
+                ...updates,
+            };
+
+            if (
+                !isAuthenticatedUser(updatedUser) ||
+                updatedUser.role !== role
+            ) {
+                return;
+            }
+
+            persistAuthMetadata({ user: updatedUser, role });
+            set({ user: updatedUser });
         },
 
         restoreSession: async () => {

@@ -9,6 +9,7 @@ import PlatformServiceRequestDetail from "../pages/platform/PlatformServiceReque
 import PlatformServiceRequests from "../pages/platform/PlatformServiceRequests";
 import PlatformOrderDetail from "../pages/platform/PlatformOrderDetail";
 import PlatformOrders from "../pages/platform/PlatformOrders";
+import PlatformProfile from "../pages/platform/PlatformProfile";
 import PlatformUserDetail from "../pages/platform/PlatformUserDetail";
 import PlatformUsers from "../pages/platform/PlatformUsers";
 import ShopApplicationDetail from "../pages/platform/ShopApplicationDetail";
@@ -67,6 +68,10 @@ const PlatformAdminRoutes = (
                 <Route
                     path="users/:id"
                     element={<PlatformUserDetail />}
+                />
+                <Route
+                    path="profile"
+                    element={<PlatformProfile />}
                 />
             </Route>
         </Route>

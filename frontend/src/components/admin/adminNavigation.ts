@@ -56,6 +56,10 @@ export const platformAdminNavigation: readonly PlatformAdminNavigationItem[] = [
 ];
 
 export const getPlatformAdminPageTitle = (pathname: string) => {
+    if (pathname === "/platform/profile") {
+        return "My Profile";
+    }
+
     const matchingItem = [...platformAdminNavigation]
         .sort((first, second) => second.path.length - first.path.length)
         .find(
