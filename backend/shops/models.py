@@ -54,6 +54,49 @@ class Shop(models.Model):
     created_at=models.DateTimeField(auto_now_add=True)
     updated_at=models.DateTimeField(auto_now=True)
 
+    def can_be_opened(self):
+        return (
+            self.is_approved
+            and self.shop_services.filter(
+                is_active=True,
+                service__is_active=True,
+            ).exists()
+        )
+
+    def check_and_update_operational_status(self):
+        """Automatically close shop if not approved or has no active services."""
+        if self.is_open and not self.can_be_opened():
+            self.is_open = False
+            self.save(update_fields=["is_open", "updated_at"])
+            return False
+        return self.is_open
+
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        explicit_is_open = (
+            update_fields is not None
+            and "is_open" in update_fields
+            and self.is_open
+        )
+
+        auto_closed = False
+        if not self.is_approved and self.is_open:
+            self.is_open = False
+            auto_closed = True
+        elif (
+            self.pk
+            and self.is_open
+            and not self.can_be_opened()
+            and not explicit_is_open
+        ):
+            self.is_open = False
+            auto_closed = True
+
+        if auto_closed and update_fields is not None:
+            kwargs["update_fields"] = list(set(update_fields) | {"is_open"})
+
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return self.shop_name
 
@@ -252,6 +295,16 @@ class Service(models.Model):
                 name="shops_service_name_ci_uniq",
             ),
         ]
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if not self.is_active and self.pk:
+            affected_shops = Shop.objects.filter(
+                is_open=True,
+                shop_services__service=self,
+            ).distinct()
+            for shop in affected_shops:
+                shop.check_and_update_operational_status()
 
     def __str__(self):
         return self.service_name
@@ -457,7 +510,11 @@ class ShopService(models.Model):
     class Meta:
         unique_together=('shop','garment_type','service')
         ordering = ['shop']
-        
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.shop_id:
+            self.shop.check_and_update_operational_status()
 
     def __str__(self):
         return f"{self.shop.shop_name} - {self.service.service_name} - {self.garment_type.garment_name}"

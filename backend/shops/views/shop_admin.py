@@ -1,16 +1,31 @@
 from rest_framework import mixins, viewsets
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import MethodNotAllowed, PermissionDenied, ValidationError
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 from django.db.models.functions import Lower, Trim
 
-from shops.models import Service, ServiceRequest, Shop, ShopService
+from shops.models import GarmentType, Service, ServiceRequest, Shop, ShopService
 from shops.serializers import (
+    GarmentTypeSerializer,
     ServiceRequestCreateSerializer,
     ShopAdminServiceRequestSerializer,
     ShopAdminServiceSerializer,
+    ShopAdminShopProfileSerializer,
+    ShopAdminShopProfileUpdateSerializer,
     ShopAdminShopServiceSerializer,
+    ShopOperationalStatusSerializer,
 )
 from users.permissions import IsShopAdmin
+
+
+class ShopAdminGarmentTypeViewSet(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [IsAuthenticated, IsShopAdmin]
+    serializer_class = GarmentTypeSerializer
+
+    def get_queryset(self):
+        return GarmentType.objects.filter(is_active=True).order_by("garment_name")
 
 
 class ShopAdminServiceViewSet(viewsets.ReadOnlyModelViewSet):
@@ -49,6 +64,18 @@ class ShopAdminShopServiceViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(shop=self.get_shop())
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        shop = self.get_shop()
+        shop.check_and_update_operational_status()
+        return instance
+
+    def destroy(self, request, *args, **kwargs):
+        raise MethodNotAllowed(
+            "DELETE",
+            detail="Permanent deletion of shop services is not permitted. Deactivate the service instead.",
+        )
 
 
 class ShopAdminServiceRequestViewSet(
@@ -113,3 +140,78 @@ class ShopAdminServiceRequestViewSet(
                 }
             )
         serializer.save(shop=shop, requested_by=self.request.user)
+
+
+class ShopAdminShopProfileView(APIView):
+    permission_classes = [IsAuthenticated, IsShopAdmin]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get_object(self):
+        try:
+            shop = self.request.user.shop
+        except Shop.DoesNotExist:
+            raise PermissionDenied("You are not linked to a shop.")
+        return shop
+
+    def get(self, request):
+        shop = self.get_object()
+        serializer = ShopAdminShopProfileSerializer(
+            shop,
+            context={"request": request},
+        )
+        return Response(serializer.data)
+
+    def patch(self, request):
+        shop = self.get_object()
+        serializer = ShopAdminShopProfileUpdateSerializer(
+            shop,
+            data=request.data,
+            partial=True,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(
+            ShopAdminShopProfileSerializer(
+                shop,
+                context={"request": request},
+            ).data
+        )
+
+
+class ShopAdminOperationalStatusView(APIView):
+    permission_classes = [IsAuthenticated, IsShopAdmin]
+
+    def post(self, request):
+        try:
+            shop = request.user.shop
+        except Shop.DoesNotExist:
+            raise PermissionDenied("You are not linked to a shop.")
+
+        serializer = ShopOperationalStatusSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        target_open = serializer.validated_data["is_open"]
+
+        if target_open:
+            if not shop.is_approved:
+                raise ValidationError(
+                    {"is_open": "An unapproved shop cannot be opened."}
+                )
+            if not shop.can_be_opened():
+                raise ValidationError(
+                    {
+                        "is_open": (
+                            "A shop must have at least one active service "
+                            "before it can be opened."
+                        )
+                    }
+                )
+
+        shop.is_open = target_open
+        shop.save(update_fields=["is_open", "updated_at"])
+        return Response(
+            ShopAdminShopProfileSerializer(
+                shop,
+                context={"request": request},
+            ).data
+        )

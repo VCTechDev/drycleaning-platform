@@ -32,22 +32,40 @@ class DeliveryAgent(models.Model):
 
 class DeliveryTask(models.Model):
 
+    TASK_TYPE_PICKUP = "pickup"
+    TASK_TYPE_DELIVERY = "delivery"
+
+    STATUS_UNASSIGNED = "unassigned"
+    STATUS_ASSIGNED = "assigned"
+    STATUS_IN_PROGRESS = "in_progress"
+    STATUS_COMPLETED = "completed"
+    STATUS_FAILED = "failed"
+    STATUS_CANCELLED = "cancelled"
+
     TASK_TYPE = (
-        ("pickup", "PICKUP"),
-        ("delivery", "DELIVERY"),
+        (TASK_TYPE_PICKUP, "PICKUP"),
+        (TASK_TYPE_DELIVERY, "DELIVERY"),
     )
 
     STATUS = (
-        ("unassigned", "UNASSIGNED"),
-        ("assigned", "ASSIGNED"),
-        ("in_progress", "IN_PROGRESS"),
-        ("completed", "COMPLETED"),
-        ("failed", "FAILED"),
+        (STATUS_UNASSIGNED, "UNASSIGNED"),
+        (STATUS_ASSIGNED, "ASSIGNED"),
+        (STATUS_IN_PROGRESS, "IN_PROGRESS"),
+        (STATUS_COMPLETED, "COMPLETED"),
+        (STATUS_FAILED, "FAILED"),
+        (STATUS_CANCELLED, "CANCELLED"),
     )
+
+    TERMINAL_STATUSES = {
+        STATUS_COMPLETED,
+        STATUS_FAILED,
+        STATUS_CANCELLED,
+    }
 
     order = models.ForeignKey(
         Order,
-        on_delete=models.PROTECT,related_name="delivery_tasks"
+        on_delete=models.PROTECT,
+        related_name="delivery_tasks",
     )
     delivery_agent = models.ForeignKey(
         DeliveryAgent,
@@ -72,13 +90,36 @@ class DeliveryTask(models.Model):
         )
 
     def clean(self):
-         if( self.delivery_agent and self.delivery_agent.shop != self.order.shop):
+        if self.delivery_agent and self.delivery_agent.shop != self.order.shop:
             raise ValidationError("Delivery Agent must belong to the same shop as the order.")
-         
-    def save(self,*args,**kwargs):
 
+        if self.pk:
+            old = (
+                DeliveryTask.objects.filter(pk=self.pk)
+                .values("status", "delivery_agent_id")
+                .first()
+            )
+            if old:
+                old_status = old["status"]
+                if old_status in self.TERMINAL_STATUSES and self.status != old_status:
+                    raise ValidationError(
+                        f"Cannot transition task from terminal status '{old_status}'."
+                    )
+                if (
+                    old_status in self.TERMINAL_STATUSES
+                    and self.delivery_agent_id != old["delivery_agent_id"]
+                ):
+                    raise ValidationError(
+                        f"Cannot reassign task in terminal status '{old_status}'."
+                    )
+                if old_status == self.STATUS_IN_PROGRESS and self.status == self.STATUS_CANCELLED:
+                    raise ValidationError(
+                        "Cannot cancel a task that is already in progress."
+                    )
+
+    def save(self, *args, **kwargs):
         self.full_clean()
-        super().save(*args,**kwargs)
+        super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.order.order_number} - {self.task_type} "
+        return f"{self.order.order_number} - {self.task_type}"

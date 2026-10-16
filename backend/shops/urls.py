@@ -9,8 +9,11 @@ from .views import (
     PlatformShopApplicationViewSet,
     PlatformShopViewSet,
     PublicShopApplicationViewSet,
+    ShopAdminGarmentTypeViewSet,
+    ShopAdminOperationalStatusView,
     ShopAdminServiceRequestViewSet,
     ShopAdminServiceViewSet,
+    ShopAdminShopProfileView,
     ShopAdminShopServiceViewSet,
 )
 
@@ -40,6 +43,11 @@ router.register(
     "platform/shops",
     PlatformShopViewSet,
     basename="platform-shops",
+)
+router.register(
+    "shop-admin/garment-types",
+    ShopAdminGarmentTypeViewSet,
+    basename="shop-admin-garment-types",
 )
 router.register(
     "shop-admin/services",
@@ -79,6 +87,12 @@ urlpatterns = [
         "shop-applications/<uuid:public_id>/submit/",
         public_application_submit,
         name="public-shop-application-submit",
+    ),
+    path("shop-admin/shop/", ShopAdminShopProfileView.as_view(), name="shop-admin-shop-profile"),
+    path(
+        "shop-admin/shop/operational-status/",
+        ShopAdminOperationalStatusView.as_view(),
+        name="shop-admin-shop-operational-status",
     ),
     path("platform/dashboard/", PlatformDashboardView.as_view(), name="platform-dashboard"),
 ] + router.urls

@@ -26,3 +26,17 @@ class IsShopAdmin(BasePermission):
             request.user.is_authenticated
             and request.user.role == "shop_admin"
         )
+
+    def has_object_permission(self, request, view, obj):
+        if not (request.user.is_authenticated and request.user.role == "shop_admin"):
+            return False
+        try:
+            shop = request.user.shop
+        except Exception:
+            return False
+
+        if hasattr(obj, "shop"):
+            return obj.shop == shop
+        if hasattr(obj, "shop_admin"):
+            return obj.shop_admin == request.user
+        return obj == shop
