@@ -243,6 +243,7 @@ class CustomerOrderDetailSerializer(serializers.ModelSerializer):
             "pickup_pincode",
             "total_amount",
             "order_status",
+            "rejection_reason",
             "payment_status",
             "created_at",
             "items",
@@ -285,22 +286,26 @@ class CustomerOrderTrackingSerializer(serializers.ModelSerializer):
 
         history = {item.status: item for item in obj.status_history.all()}
 
-        if obj.order_status == "cancelled":
+        if obj.order_status in ("cancelled", "rejected"):
 
-            cancelled_history = history.get("cancelled")
+            terminal_history = history.get(obj.order_status)
 
             return [
                 {
-                    "status": "cancelled",
+                    "status": obj.order_status,
                     "completed": True,
                     "current": True,
                     "created_at": (
-                        cancelled_history.created_at if cancelled_history else None
+                        terminal_history.created_at if terminal_history else None
                     ),
                 }
             ]
 
-        current_index = workflow.index(obj.order_status)
+        current_index = (
+            workflow.index(obj.order_status)
+            if obj.order_status in workflow
+            else 0
+        )
 
         return [
             {

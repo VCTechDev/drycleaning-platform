@@ -52,7 +52,7 @@ class PlatformAdminOrderViewSet(viewsets.ReadOnlyModelViewSet):
         )
 
         gross_order_value = (
-            queryset.exclude(order_status="cancelled")
+            queryset.exclude(order_status__in=["cancelled", "rejected"])
             .aggregate(total=Sum("total_amount"))["total"]
             or Decimal("0.00")
         )
@@ -77,6 +77,9 @@ class PlatformAdminOrderViewSet(viewsets.ReadOnlyModelViewSet):
                     "total_orders": queryset.count(),
                     "cancelled_orders": queryset.filter(
                         order_status="cancelled"
+                    ).count(),
+                    "rejected_orders": queryset.filter(
+                        order_status="rejected"
                     ).count(),
                     "gross_order_value": gross_order_value,
                 },

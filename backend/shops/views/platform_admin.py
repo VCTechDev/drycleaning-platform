@@ -415,11 +415,13 @@ class PlatformDashboardView(APIView):
         from django.db.models.functions import TruncDate
 
         orders = Order.objects.all()
-        non_cancelled_orders = orders.exclude(order_status="cancelled")
+        non_cancelled_orders = orders.exclude(
+            order_status__in=["cancelled", "rejected"]
+        )
         active_statuses = [
             value
             for value, _ in Order.ORDER_STATUS
-            if value not in {"delivered", "cancelled"}
+            if value not in {"delivered", "cancelled", "rejected"}
         ]
 
         period_days = request.query_params.get("days", "30")
@@ -474,7 +476,9 @@ class PlatformDashboardView(APIView):
             OrderItem.objects.filter(
                 item_status="active",
                 order__order_status__in=[
-                    value for value, _ in Order.ORDER_STATUS if value != "cancelled"
+                    value
+                    for value, _ in Order.ORDER_STATUS
+                    if value not in {"cancelled", "rejected"}
                 ],
             )
             .values("service_name_snapshot")
@@ -495,6 +499,7 @@ class PlatformDashboardView(APIView):
                     ).count(),
                     "completed_orders": orders.filter(order_status="delivered").count(),
                     "cancelled_orders": orders.filter(order_status="cancelled").count(),
+                    "rejected_orders": orders.filter(order_status="rejected").count(),
                     "pending_shop_applications": ShopApplication.objects.filter(
                         status__in=["submitted", "under_review"]
                     ).count(),
