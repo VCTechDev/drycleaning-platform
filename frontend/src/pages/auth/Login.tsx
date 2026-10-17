@@ -47,6 +47,8 @@ function Login() {
                 navigate("/customer/shops");
             } else if (data.role === "platform_admin") {
                 navigate("/platform");
+            } else if (data.role === "shop_admin") {
+                navigate("/shop-admin");
             } else {
                 navigate("/auth/role-pending", {
                     state: { role: data.role },

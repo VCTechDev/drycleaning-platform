@@ -10,7 +10,7 @@ interface RoleRouteProps {
 const roleDestinations: Record<UserRole, string> = {
     customer: "/customer/shops",
     platform_admin: "/platform",
-    shop_admin: "/auth/role-pending",
+    shop_admin: "/shop-admin",
     delivery_agent: "/auth/role-pending",
 };
 
