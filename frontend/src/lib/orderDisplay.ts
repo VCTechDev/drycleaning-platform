@@ -36,6 +36,10 @@ const ORDER_STATUS_META: Record<string, OrderStatusMeta> = {
         label: "Cancelled",
         badgeClass: "bg-red-50 text-red-700",
     },
+    rejected: {
+        label: "Rejected",
+        badgeClass: "bg-rose-50 text-rose-700",
+    },
 };
 
 const fallbackStatusLabel = (status: string) => {
@@ -105,7 +109,7 @@ const getValidDate = (value: string | null | undefined) => {
     return Number.isNaN(date.getTime()) ? null : date;
 };
 
-export const formatOrderDate = (value: string | null | undefined) => {
+export const formatOrderDate = (value: string | null | undefined): string => {
     const date = getValidDate(value);
 
     if (!date) {
@@ -119,9 +123,9 @@ export const formatOrderDate = (value: string | null | undefined) => {
     }).format(date);
 };
 
-export const formatOrderDateTime = (
+export const formatOrderTime = (
     value: string | null | undefined
-) => {
+): string | null => {
     const date = getValidDate(value);
 
     if (!date) {
@@ -129,12 +133,34 @@ export const formatOrderDateTime = (
     }
 
     return new Intl.DateTimeFormat("en-IN", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+    }).format(date).toLowerCase();
+};
+
+export const formatOrderDateTime = (
+    value: string | null | undefined
+): string | null => {
+    const date = getValidDate(value);
+
+    if (!date) {
+        return null;
+    }
+
+    const dateStr = new Intl.DateTimeFormat("en-IN", {
         day: "numeric",
         month: "short",
         year: "numeric",
+    }).format(date);
+
+    const timeStr = new Intl.DateTimeFormat("en-IN", {
         hour: "numeric",
         minute: "2-digit",
-    }).format(date);
+        hour12: true,
+    }).format(date).toLowerCase();
+
+    return `${dateStr} · ${timeStr}`;
 };
 
 export type OrderAmount = number | string;
