@@ -455,7 +455,7 @@ class ShopAdminOrderWorkflowTests(APITestCase):
             is_approved=True,
         )
 
-    def create_order(self, shop, order_status="placed"):
+    def create_order(self, shop, order_status="placed", payment_status="pending"):
         return Order.objects.create(
             customer=self.customer,
             shop=shop,
@@ -466,7 +466,7 @@ class ShopAdminOrderWorkflowTests(APITestCase):
             pickup_pincode="682001",
             total_amount=Decimal("150.00"),
             order_status=order_status,
-            payment_status="pending",
+            payment_status=payment_status,
         )
 
     def test_shop_admin_list_and_detail_scoping_and_cross_shop_isolation(self):
@@ -544,10 +544,12 @@ class ShopAdminOrderWorkflowTests(APITestCase):
         )
         self.assertEqual(res_valid.status_code, 200, res_valid.data)
         self.assertEqual(res_valid.data["order_status"], "rejected")
+        self.assertEqual(res_valid.data["payment_status"], "cancelled")
         self.assertEqual(res_valid.data["rejection_reason"], reason_text)
 
         order.refresh_from_db()
         self.assertEqual(order.order_status, "rejected")
+        self.assertEqual(order.payment_status, "cancelled")
         self.assertEqual(order.rejection_reason, reason_text)
 
         # Verify OrderStatusHistory
@@ -641,6 +643,172 @@ class ShopAdminOrderWorkflowTests(APITestCase):
             format="json",
         )
         self.assertEqual(res_reject.status_code, 404)
+
+    def test_reject_eligible_order_with_pending_payment_cancels_payment(self):
+        order = self.create_order(self.shop_1, order_status="placed", payment_status="pending")
+        self.client.force_authenticate(user=self.shop_admin_1)
+
+        res = self.client.post(
+            f"/api/shop-admin/orders/{order.id}/reject/",
+            {"reason": "Material cannot be safely processed."},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["order_status"], "rejected")
+        self.assertEqual(res.data["payment_status"], "cancelled")
+        self.assertEqual(res.data["rejection_reason"], "Material cannot be safely processed.")
+
+        order.refresh_from_db()
+        self.assertEqual(order.order_status, "rejected")
+        self.assertEqual(order.payment_status, "cancelled")
+        self.assertEqual(order.rejection_reason, "Material cannot be safely processed.")
+
+    def test_reject_eligible_order_with_already_paid_payment_preserves_payment_status(self):
+        order = self.create_order(self.shop_1, order_status="placed", payment_status="success")
+        self.client.force_authenticate(user=self.shop_admin_1)
+
+        res = self.client.post(
+            f"/api/shop-admin/orders/{order.id}/reject/",
+            {"reason": "Item out of service capacity."},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["order_status"], "rejected")
+        self.assertEqual(res.data["payment_status"], "success")
+
+        order.refresh_from_db()
+        self.assertEqual(order.order_status, "rejected")
+        self.assertEqual(order.payment_status, "success")
+
+    def test_reject_eligible_order_with_other_non_pending_payment_statuses_preserves_payment_status(self):
+        self.client.force_authenticate(user=self.shop_admin_1)
+        non_pending_statuses = ["processing", "failed", "cancelled"]
+
+        for payment_status in non_pending_statuses:
+            with self.subTest(payment_status=payment_status):
+                order = self.create_order(
+                    self.shop_1,
+                    order_status="placed",
+                    payment_status=payment_status,
+                )
+                res = self.client.post(
+                    f"/api/shop-admin/orders/{order.id}/reject/",
+                    {"reason": f"Rejection test for {payment_status}"},
+                    format="json",
+                )
+                self.assertEqual(res.status_code, 200, res.data)
+                self.assertEqual(res.data["order_status"], "rejected")
+                self.assertEqual(res.data["payment_status"], payment_status)
+
+                order.refresh_from_db()
+                self.assertEqual(order.order_status, "rejected")
+                self.assertEqual(order.payment_status, payment_status)
+
+    def test_reject_fails_on_invalid_order_state_and_preserves_statuses(self):
+        self.client.force_authenticate(user=self.shop_admin_1)
+        invalid_states = [
+            "accepted",
+            "pickup_scheduled",
+            "picked_up",
+            "processing",
+            "ready",
+            "delivered",
+            "cancelled",
+            "rejected",
+        ]
+
+        for initial_status in invalid_states:
+            with self.subTest(initial_status=initial_status):
+                order = self.create_order(
+                    self.shop_1,
+                    order_status=initial_status,
+                    payment_status="pending",
+                )
+                res = self.client.post(
+                    f"/api/shop-admin/orders/{order.id}/reject/",
+                    {"reason": "Cannot reject in invalid status"},
+                    format="json",
+                )
+                self.assertEqual(res.status_code, 400)
+                order.refresh_from_db()
+                self.assertEqual(order.order_status, initial_status)
+                self.assertEqual(order.payment_status, "pending")
+
+    def test_reject_fails_on_missing_or_blank_reason_and_preserves_statuses(self):
+        order = self.create_order(self.shop_1, order_status="placed", payment_status="pending")
+        self.client.force_authenticate(user=self.shop_admin_1)
+
+        invalid_payloads = [
+            {},
+            {"reason": ""},
+            {"reason": "    "},
+            {"reason": None},
+        ]
+
+        for payload in invalid_payloads:
+            with self.subTest(payload=payload):
+                res = self.client.post(
+                    f"/api/shop-admin/orders/{order.id}/reject/",
+                    payload,
+                    format="json",
+                )
+                self.assertEqual(res.status_code, 400)
+                order.refresh_from_db()
+                self.assertEqual(order.order_status, "placed")
+                self.assertEqual(order.payment_status, "pending")
+                self.assertIsNone(order.rejection_reason)
+
+    def test_cross_shop_rejection_denied_and_preserves_statuses(self):
+        order_2 = self.create_order(self.shop_2, order_status="placed", payment_status="pending")
+        self.client.force_authenticate(user=self.shop_admin_1)
+
+        res_reject = self.client.post(
+            f"/api/shop-admin/orders/{order_2.id}/reject/",
+            {"reason": "Attempting cross-shop rejection"},
+            format="json",
+        )
+        self.assertEqual(res_reject.status_code, 404)
+
+        order_2.refresh_from_db()
+        self.assertEqual(order_2.order_status, "placed")
+        self.assertEqual(order_2.payment_status, "pending")
+        self.assertIsNone(order_2.rejection_reason)
+
+    def test_model_transition_to_rejection_payment_cancellation_logic(self):
+        # 1. Pending payment cancels on rejection
+        order_pending = self.create_order(self.shop_1, order_status="placed", payment_status="pending")
+        order_pending.transition_to(
+            Order.STATUS_REJECTED,
+            by_user=self.shop_admin_1,
+            reason="Capacity exceeded",
+        )
+        order_pending.save()
+        order_pending.refresh_from_db()
+        self.assertEqual(order_pending.order_status, "rejected")
+        self.assertEqual(order_pending.payment_status, "cancelled")
+
+        # 2. Already paid payment remains unchanged on rejection
+        order_paid = self.create_order(self.shop_1, order_status="placed", payment_status="success")
+        order_paid.transition_to(
+            Order.STATUS_REJECTED,
+            by_user=self.shop_admin_1,
+            reason="Capacity exceeded",
+        )
+        order_paid.save()
+        order_paid.refresh_from_db()
+        self.assertEqual(order_paid.order_status, "rejected")
+        self.assertEqual(order_paid.payment_status, "success")
+
+        # 3. Validation failure preserves both statuses
+        order_fail = self.create_order(self.shop_1, order_status="placed", payment_status="pending")
+        with self.assertRaises(ValidationError):
+            order_fail.transition_to(
+                Order.STATUS_REJECTED,
+                by_user=self.shop_admin_1,
+                reason="  ",
+            )
+        self.assertEqual(order_fail.order_status, "placed")
+        self.assertEqual(order_fail.payment_status, "pending")
 
 
 class CustomerOrderCancellationTests(APITestCase):

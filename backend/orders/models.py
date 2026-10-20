@@ -72,12 +72,18 @@ class Order(models.Model):
         STATUS_REJECTED: set(),
     }
 
+    PAYMENT_STATUS_PENDING = "pending"
+    PAYMENT_STATUS_PROCESSING = "processing"
+    PAYMENT_STATUS_SUCCESS = "success"
+    PAYMENT_STATUS_FAILED = "failed"
+    PAYMENT_STATUS_CANCELLED = "cancelled"
+
     PAYMENT_STATUS = (
-        ("pending", "PENDING"),
-        ("processing", "PROCESSING"),
-        ("success", "SUCCESS"),
-        ("failed", "FAILED"),
-        ("cancelled", "CANCELLED"),
+        (PAYMENT_STATUS_PENDING, "PENDING"),
+        (PAYMENT_STATUS_PROCESSING, "PROCESSING"),
+        (PAYMENT_STATUS_SUCCESS, "SUCCESS"),
+        (PAYMENT_STATUS_FAILED, "FAILED"),
+        (PAYMENT_STATUS_CANCELLED, "CANCELLED"),
     )
 
     customer = models.ForeignKey(
@@ -225,6 +231,8 @@ class Order(models.Model):
                     "A rejection reason is required when rejecting an order."
                 )
             self.rejection_reason = str(reason).strip()
+            if self.payment_status == self.PAYMENT_STATUS_PENDING:
+                self.payment_status = self.PAYMENT_STATUS_CANCELLED
 
         self.order_status = target_status
 
