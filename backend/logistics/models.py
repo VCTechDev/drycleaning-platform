@@ -26,8 +26,28 @@ class DeliveryAgent(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def clean(self):
+        if self.user_id:
+            user = getattr(self, "user", None)
+            if user and user.role != "delivery_agent":
+                raise ValidationError("User linked to DeliveryAgent must have role 'delivery_agent'.")
+        if not self.is_active and self.is_online:
+            raise ValidationError("An inactive delivery agent cannot be set online.")
+        if self.shift_starts_at and self.shift_ends_at and self.shift_starts_at == self.shift_ends_at:
+            raise ValidationError("Shift start time and end time cannot be identical.")
+
+    def save(self, *args, **kwargs):
+        if not self.is_active:
+            self.is_online = False
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None:
+                kwargs["update_fields"] = set(update_fields) | {"is_online"}
+        self.full_clean()
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.user.username} - {self.shop.shop_name}"
+
 
 
 class DeliveryTask(models.Model):
