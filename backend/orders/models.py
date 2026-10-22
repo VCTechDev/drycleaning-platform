@@ -224,6 +224,30 @@ class Order(models.Model):
                     raise ValidationError(
                         "Order cannot be cancelled after physical pickup has occurred."
                     )
+            elif by_user.role == "delivery_agent":
+                try:
+                    agent = by_user.delivery_agent
+                except Exception:
+                    raise PermissionDenied(
+                        "You do not have an active delivery agent profile."
+                    )
+                if not agent.is_active or not by_user.is_active:
+                    raise PermissionDenied(
+                        "Inactive delivery agents cannot manage orders."
+                    )
+                if self.shop_id != agent.shop_id:
+                    raise PermissionDenied(
+                        "You can only manage orders for your assigned shop."
+                    )
+                allowed_delivery_agent_transitions = {
+                    (self.STATUS_ACCEPTED, self.STATUS_PICKUP_SCHEDULED),
+                    (self.STATUS_PICKUP_SCHEDULED, self.STATUS_PICKED_UP),
+                    (self.STATUS_READY, self.STATUS_DELIVERED),
+                }
+                if (self.order_status, target_status) not in allowed_delivery_agent_transitions:
+                    raise PermissionDenied(
+                        f"Delivery Agent is not permitted to transition order from '{self.order_status}' to '{target_status}'."
+                    )
 
         if target_status == self.STATUS_REJECTED:
             if not reason or not str(reason).strip():

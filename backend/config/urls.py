@@ -21,11 +21,11 @@ urlpatterns = [
         TokenRefreshView.as_view(),
         name="token_refresh",
     ),
-    path("api/",include("shops.urls")),
-    path("api/",include("orders.urls")),
-    path("api/",include("accounts.urls")),
-    path("api/",include("users.urls")),
-    
+    path("api/", include("shops.urls")),
+    path("api/", include("orders.urls")),
+    path("api/", include("accounts.urls")),
+    path("api/", include("users.urls")),
+    path("api/", include("logistics.urls")),
 ]
 
 if settings.DEBUG:
