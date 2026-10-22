@@ -20,6 +20,8 @@ import {
     Sparkles,
     Truck,
     User,
+    UserMinus,
+    UserPlus,
     X,
 } from "lucide-react";
 
@@ -28,6 +30,8 @@ import {
     PaymentStatusBadge,
 } from "../../components/admin/orders/OrderStatusBadge";
 import GarmentImage from "../../components/order/GarmentImage";
+import AssignDeliveryTaskDialog from "../../components/shopAdmin/AssignDeliveryTaskDialog";
+import UnassignDeliveryTaskDialog from "../../components/shopAdmin/UnassignDeliveryTaskDialog";
 import { Button } from "../../components/ui/button";
 import {
     useAcceptOrder,
@@ -44,6 +48,7 @@ import {
 } from "../../lib/orderDisplay";
 import type {
     ShopAdminDeliveryTaskStatus,
+    ShopAdminDeliveryTaskType,
     ShopAdminOrderCustomer,
 } from "../../types/shopAdmin/orders";
 
@@ -263,6 +268,19 @@ function ShopOrderDetail() {
 
     const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
     const [actionErrorMessage, setActionErrorMessage] = useState<string | null>(null);
+
+    const [selectedAssignTask, setSelectedAssignTask] = useState<{
+        id: number;
+        task_type: ShopAdminDeliveryTaskType;
+        scheduled_at: string | null;
+        delivery_agent_username: string | null;
+    } | null>(null);
+
+    const [selectedUnassignTask, setSelectedUnassignTask] = useState<{
+        id: number;
+        task_type: ShopAdminDeliveryTaskType;
+        delivery_agent_username: string | null;
+    } | null>(null);
 
     const isAnyActionPending =
         acceptMutation.isPending ||
@@ -934,51 +952,98 @@ function ShopOrderDetail() {
                             </p>
                         ) : (
                             <div className="mt-4 divide-y divide-slate-100">
-                                {order.delivery_tasks.map((task) => (
-                                    <div key={task.id} className="py-3.5 first:pt-0 last:pb-0 space-y-2">
-                                        <div className="flex items-center justify-between gap-2">
-                                            <span className="text-xs font-bold uppercase tracking-wider text-slate-800">
-                                                {task.task_type === "pickup" ? "Pickup Task" : "Delivery Task"}
-                                            </span>
-                                            <span
-                                                className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold capitalize ${getDeliveryTaskStatusBadge(
-                                                    task.status
-                                                )}`}
-                                            >
-                                                {task.status.replace("_", " ")}
-                                            </span>
-                                        </div>
+                                {order.delivery_tasks.map((task) => {
+                                    const isOrderTerminal = ["delivered", "cancelled", "rejected"].includes(order.order_status);
+                                    const isTaskInProgress = task.status === "in_progress";
+                                    const isTaskAssigned = task.status === "assigned";
+                                    const isTaskUnassigned = task.status === "unassigned";
 
-                                        <div className="space-y-1.5 text-xs text-slate-600">
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-slate-400">Agent:</span>
-                                                <span className="font-medium text-slate-800">
-                                                    {task.delivery_agent_username || "Unassigned"}
+                                    return (
+                                        <div key={task.id} className="py-3.5 first:pt-0 last:pb-0 space-y-2.5">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                                                    {task.task_type === "pickup" ? "Pickup Task" : "Delivery Task"}
+                                                </span>
+                                                <span
+                                                    className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold capitalize ${getDeliveryTaskStatusBadge(
+                                                        task.status
+                                                    )}`}
+                                                >
+                                                    {task.status.replace("_", " ")}
                                                 </span>
                                             </div>
-                                            {task.delivery_agent_phone && (
+
+                                            <div className="space-y-1.5 text-xs text-slate-600">
                                                 <div className="flex items-center justify-between">
-                                                    <span className="text-slate-400">Phone:</span>
-                                                    <span className="text-slate-700">
-                                                        {task.delivery_agent_phone}
+                                                    <span className="text-slate-400">Agent:</span>
+                                                    <span className="font-medium text-slate-800">
+                                                        {task.delivery_agent_username || "Unassigned"}
                                                     </span>
                                                 </div>
-                                            )}
-                                            {task.scheduled_at && (
-                                                <div className="flex items-center justify-between">
-                                                    <span className="text-slate-400">Scheduled:</span>
-                                                    <span className="text-slate-700">{formatOrderDateTime(task.scheduled_at)}</span>
-                                                </div>
-                                            )}
-                                            {task.completed_at && (
-                                                <div className="flex items-center justify-between">
-                                                    <span className="text-slate-400">Completed:</span>
-                                                    <span className="text-slate-700">{formatOrderDateTime(task.completed_at)}</span>
+                                                {task.delivery_agent_phone && (
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-slate-400">Phone:</span>
+                                                        <span className="text-slate-700">
+                                                            {task.delivery_agent_phone}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                                {task.scheduled_at && (
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-slate-400">Scheduled:</span>
+                                                        <span className="text-slate-700">{formatOrderDateTime(task.scheduled_at)}</span>
+                                                    </div>
+                                                )}
+                                                {task.completed_at && (
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-slate-400">Completed:</span>
+                                                        <span className="text-slate-700">{formatOrderDateTime(task.completed_at)}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Action buttons */}
+                                            {!isOrderTerminal && (
+                                                <div className="pt-1 flex items-center justify-end gap-2 border-t border-slate-50">
+                                                    {isTaskUnassigned && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setSelectedAssignTask(task)}
+                                                            className="inline-flex items-center gap-1 rounded-lg bg-[#2563EB] px-3 py-1 text-xs font-semibold text-white shadow-2xs hover:bg-blue-700 transition-colors"
+                                                        >
+                                                            <UserPlus className="h-3 w-3" />
+                                                            Assign Driver
+                                                        </button>
+                                                    )}
+                                                    {isTaskAssigned && (
+                                                        <>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setSelectedAssignTask(task)}
+                                                                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                                                            >
+                                                                Reassign
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setSelectedUnassignTask(task)}
+                                                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 hover:border-rose-200 transition-colors"
+                                                            >
+                                                                <UserMinus className="h-3 w-3" />
+                                                                Unassign
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                    {isTaskInProgress && (
+                                                        <span className="text-[11px] font-medium text-amber-700 bg-amber-50 rounded-md px-2 py-0.5 border border-amber-200/80">
+                                                            Active with Driver
+                                                        </span>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
@@ -1002,6 +1067,28 @@ function ShopOrderDetail() {
                     }
                 />
             )}
+            {/* Assign / Reassign Task Dialog */}
+            <AssignDeliveryTaskDialog
+                taskId={selectedAssignTask?.id ?? null}
+                orderId={order.id}
+                orderNumber={order.order_number}
+                taskType={selectedAssignTask?.task_type}
+                currentAgentId={null}
+                currentScheduledAt={selectedAssignTask?.scheduled_at}
+                isOpen={Boolean(selectedAssignTask)}
+                onClose={() => setSelectedAssignTask(null)}
+            />
+
+            {/* Unassign Task Confirmation Dialog */}
+            <UnassignDeliveryTaskDialog
+                taskId={selectedUnassignTask?.id ?? null}
+                orderId={order.id}
+                orderNumber={order.order_number}
+                taskType={selectedUnassignTask?.task_type}
+                agentName={selectedUnassignTask?.delivery_agent_username}
+                isOpen={Boolean(selectedUnassignTask)}
+                onClose={() => setSelectedUnassignTask(null)}
+            />
         </div>
     );
 }

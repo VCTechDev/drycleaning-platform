@@ -10,6 +10,7 @@ import ShopServices from "../pages/shop-admin/Services";
 import ShopServiceRequests from "../pages/shop-admin/ServiceRequests";
 import ShopDeliveryAgents from "../pages/shop-admin/DeliveryAgents";
 import ShopDeliveryAgentRegister from "../pages/shop-admin/DeliveryAgentRegister";
+import ShopDeliveryTasks from "../pages/shop-admin/DeliveryTasks";
 import ShopProfile from "../pages/shop-admin/ShopProfile";
 
 const ShopAdminRoutes = (
@@ -21,6 +22,7 @@ const ShopAdminRoutes = (
                 <Route path="orders/:id" element={<ShopOrderDetail />} />
                 <Route path="services" element={<ShopServices />} />
                 <Route path="service-requests" element={<ShopServiceRequests />} />
+                <Route path="delivery-tasks" element={<ShopDeliveryTasks />} />
                 <Route path="delivery-agents" element={<ShopDeliveryAgents />} />
                 <Route path="delivery-agents/register" element={<ShopDeliveryAgentRegister />} />
                 <Route path="profile" element={<ShopProfile />} />

@@ -89,7 +89,18 @@ function ShopAdminMobileNav({
 
                     {/* Shop Identity Info */}
                     {profile && (
-                        <div className="mt-6 rounded-xl bg-white/5 p-3.5 border border-white/10">
+                        <NavLink
+                            to="/shop-admin/profile"
+                            onClick={() => onOpenChange(false)}
+                            aria-label={`Shop Profile - ${profile.shop_name || "My Shop"}`}
+                            className={({ isActive }) =>
+                                `mt-6 block rounded-xl border p-3.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#172554] ${
+                                    isActive
+                                        ? "border-blue-400/40 bg-white/10 ring-1 ring-blue-400/30"
+                                        : "border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10"
+                                }`
+                            }
+                        >
                             <div className="flex items-center gap-2">
                                 <Store className="h-4 w-4 shrink-0 text-blue-300" aria-hidden="true" />
                                 <p className="truncate text-sm font-semibold text-white">
@@ -114,7 +125,7 @@ function ShopAdminMobileNav({
                                     </span>
                                 )}
                             </div>
-                        </div>
+                        </NavLink>
                     )}
 
                     {/* Logout */}

@@ -80,7 +80,17 @@ function ShopAdminSidebar({ onLogout }: ShopAdminSidebarProps) {
 
             {/* Bottom Section: Shop Status & Account */}
             <div className="border-t border-white/10 p-4">
-                <div className="mb-3 rounded-xl bg-white/5 p-3 backdrop-blur-xs">
+                <NavLink
+                    to="/shop-admin/profile"
+                    aria-label={`Shop Profile - ${profile?.shop_name || "My Shop"}`}
+                    className={({ isActive }) =>
+                        `group mb-3 block rounded-xl border p-3 backdrop-blur-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#172554] ${
+                            isActive
+                                ? "border-blue-400/40 bg-white/10 ring-1 ring-blue-400/30"
+                                : "border-transparent bg-white/5 hover:border-white/15 hover:bg-white/10"
+                        }`
+                    }
+                >
                     {isLoading ? (
                         <div className="space-y-1.5">
                             <div className="h-4 w-28 animate-pulse rounded bg-white/20" />
@@ -89,8 +99,8 @@ function ShopAdminSidebar({ onLogout }: ShopAdminSidebarProps) {
                     ) : profile ? (
                         <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                                <Store className="h-4 w-4 shrink-0 text-blue-300" aria-hidden="true" />
-                                <p className="truncate text-sm font-semibold text-white">
+                                <Store className="h-4 w-4 shrink-0 text-blue-300 group-hover:text-blue-200 transition-colors" aria-hidden="true" />
+                                <p className="truncate text-sm font-semibold text-white group-hover:text-blue-100 transition-colors">
                                     {profile.shop_name || "My Shop"}
                                 </p>
                             </div>
@@ -116,7 +126,7 @@ function ShopAdminSidebar({ onLogout }: ShopAdminSidebarProps) {
                     ) : (
                         <p className="text-xs text-slate-400">Shop Admin Workspace</p>
                     )}
-                </div>
+                </NavLink>
 
                 <Button
                     type="button"
