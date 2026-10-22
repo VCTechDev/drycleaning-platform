@@ -1,4 +1,4 @@
-from django.db import transaction
+from django.db import OperationalError, transaction
 from django.db.models import Q
 from django.http import Http404
 from rest_framework import status, viewsets
@@ -8,6 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from logistics.models import DeliveryAgent, DeliveryTask
+from orders.models import Order
 from logistics.serializers.shop_admin import (
     DeliveryAgentSerializer,
     ShopAdminDeliveryAgentRegisterSerializer,
@@ -214,47 +215,101 @@ class ShopAdminDeliveryTaskViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=["post"], url_path="assign")
     def assign(self, request, pk=None):
         shop = self.get_shop()
-        with transaction.atomic():
-            task = (
-                DeliveryTask.objects.select_for_update(of=("self",))
-                .filter(pk=pk, order__shop=shop)
-                .first()
-            )
-            if not task:
-                raise Http404
+        try:
+            with transaction.atomic():
+                task_info = (
+                    DeliveryTask.objects.filter(pk=pk, order__shop=shop)
+                    .values("id", "order_id")
+                    .first()
+                )
+                if not task_info:
+                    raise Http404
 
-            serializer = ShopAdminDeliveryTaskAssignSerializer(
-                data=request.data,
-                context={"task": task, "shop": shop, "request": request},
-            )
-            serializer.is_valid(raise_exception=True)
-            updated_task = serializer.save()
+                order = (
+                    Order.objects.select_for_update()
+                    .filter(pk=task_info["order_id"], shop=shop)
+                    .first()
+                )
+                if not order:
+                    raise Http404
 
-        return Response(
-            ShopAdminDeliveryTaskSerializer(updated_task, context={"request": request}).data,
-            status=status.HTTP_200_OK,
-        )
+                task = (
+                    DeliveryTask.objects.select_for_update(of=("self",))
+                    .filter(pk=pk, order=order)
+                    .first()
+                )
+                if not task:
+                    raise Http404
+
+                task.order = order
+
+                serializer = ShopAdminDeliveryTaskAssignSerializer(
+                    data=request.data,
+                    context={"task": task, "shop": shop, "request": request},
+                )
+                serializer.is_valid(raise_exception=True)
+                updated_task = serializer.save()
+
+            return Response(
+                ShopAdminDeliveryTaskSerializer(updated_task, context={"request": request}).data,
+                status=status.HTTP_200_OK,
+            )
+        except OperationalError as exc:
+            msg = str(exc).lower()
+            if "deadlock detected" in msg or "could not obtain lock" in msg or "lock timeout" in msg:
+                return Response(
+                    {"detail": "A concurrent update conflict occurred. Please retry your request."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            raise
 
     @action(detail=True, methods=["post"], url_path="unassign")
     def unassign(self, request, pk=None):
         shop = self.get_shop()
-        with transaction.atomic():
-            task = (
-                DeliveryTask.objects.select_for_update(of=("self",))
-                .filter(pk=pk, order__shop=shop)
-                .first()
-            )
-            if not task:
-                raise Http404
+        try:
+            with transaction.atomic():
+                task_info = (
+                    DeliveryTask.objects.filter(pk=pk, order__shop=shop)
+                    .values("id", "order_id")
+                    .first()
+                )
+                if not task_info:
+                    raise Http404
 
-            serializer = ShopAdminDeliveryTaskUnassignSerializer(
-                data=request.data,
-                context={"task": task, "shop": shop, "request": request},
-            )
-            serializer.is_valid(raise_exception=True)
-            updated_task = serializer.save()
+                order = (
+                    Order.objects.select_for_update()
+                    .filter(pk=task_info["order_id"], shop=shop)
+                    .first()
+                )
+                if not order:
+                    raise Http404
 
-        return Response(
-            ShopAdminDeliveryTaskSerializer(updated_task, context={"request": request}).data,
-            status=status.HTTP_200_OK,
-        )
+                task = (
+                    DeliveryTask.objects.select_for_update(of=("self",))
+                    .filter(pk=pk, order=order)
+                    .first()
+                )
+                if not task:
+                    raise Http404
+
+                task.order = order
+
+                serializer = ShopAdminDeliveryTaskUnassignSerializer(
+                    data=request.data,
+                    context={"task": task, "shop": shop, "request": request},
+                )
+                serializer.is_valid(raise_exception=True)
+                updated_task = serializer.save()
+
+            return Response(
+                ShopAdminDeliveryTaskSerializer(updated_task, context={"request": request}).data,
+                status=status.HTTP_200_OK,
+            )
+        except OperationalError as exc:
+            msg = str(exc).lower()
+            if "deadlock detected" in msg or "could not obtain lock" in msg or "lock timeout" in msg:
+                return Response(
+                    {"detail": "A concurrent update conflict occurred. Please retry your request."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            raise

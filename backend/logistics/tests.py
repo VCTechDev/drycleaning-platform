@@ -1,11 +1,13 @@
 from datetime import time, timedelta
 from decimal import Decimal
+import threading
 from unittest.mock import patch
 
 from django.contrib.auth.hashers import check_password
 from django.core.exceptions import ValidationError
+from django.db import OperationalError, connections
 from django.utils import timezone
-from rest_framework.test import APITestCase
+from rest_framework.test import APIClient, APITestCase, APITransactionTestCase
 
 from logistics.models import DeliveryAgent, DeliveryTask
 from orders.models import Order
@@ -2088,3 +2090,378 @@ class DeliveryAgentTaskWorkflowTests(APITestCase):
         self.assertIsNone(task.completed_at)
         order.refresh_from_db()
         self.assertEqual(order.order_status, "pickup_scheduled")
+
+
+class DeliveryAgentConcurrencyAndRegressionTests(APITestCase):
+    """
+    Focused regression and lock-order tests for customer cancellation vs.
+    delivery agent task actions.
+    """
+
+    def setUp(self):
+        self.password = "StrongPassword123!"
+
+        self.shop_admin = User.objects.create_user(
+            username="conc_shop_admin",
+            email="conc_admin@example.com",
+            password=self.password,
+            role="shop_admin",
+        )
+        self.shop = Shop.objects.create(
+            shop_admin=self.shop_admin,
+            shop_name="Concurrency Safe Cleaners",
+            contact_number="9876543210",
+            address_line="100 Parallel Ave",
+            city="Kochi",
+            district="Ernakulam",
+            state="Kerala",
+            pincode="682001",
+            opening_time=time(9),
+            closing_time=time(18),
+            is_approved=True,
+        )
+        self.customer = User.objects.create_user(
+            username="conc_customer",
+            email="conc_cust@example.com",
+            password=self.password,
+            role="customer",
+        )
+        self.agent_user = User.objects.create_user(
+            username="conc_agent",
+            email="conc_agent@example.com",
+            password=self.password,
+            role="delivery_agent",
+        )
+        self.agent = DeliveryAgent.objects.create(
+            user=self.agent_user,
+            shop=self.shop,
+            shift_starts_at=time(8),
+            shift_ends_at=time(20),
+            is_online=True,
+        )
+
+    def create_order(self, order_status="accepted"):
+        return Order.objects.create(
+            customer=self.customer,
+            shop=self.shop,
+            pickup_address_line="Flat 1A, River Road",
+            pickup_city="Kochi",
+            pickup_district="Ernakulam",
+            pickup_state="Kerala",
+            pickup_pincode="682001",
+            total_amount=Decimal("150.00"),
+            order_status=order_status,
+            payment_status="pending",
+        )
+
+    def create_task(self, order, task_type="pickup", status="assigned", delivery_agent=None):
+        agent = delivery_agent or self.agent
+        task = DeliveryTask.objects.filter(order=order, task_type=task_type).first()
+        if not task:
+            return DeliveryTask.objects.create(
+                order=order,
+                task_type=task_type,
+                status=status,
+                delivery_agent=agent,
+            )
+        task.status = status
+        task.delivery_agent = agent
+        task.save()
+        return task
+
+    def test_customer_cancellation_while_pickup_task_is_assigned_then_agent_start_blocked_400(self):
+        order = self.create_order(order_status="accepted")
+        task = self.create_task(order, task_type="pickup", status="assigned")
+
+        # Customer cancels
+        self.client.force_authenticate(user=self.customer)
+        res_cancel = self.client.post(f"/api/orders/{order.id}/cancel/")
+        self.assertEqual(res_cancel.status_code, 200)
+        self.assertEqual(res_cancel.data["order_status"], "cancelled")
+
+        order.refresh_from_db()
+        task.refresh_from_db()
+        self.assertEqual(order.order_status, "cancelled")
+        self.assertEqual(task.status, "cancelled")
+
+        # Agent attempts to start cancelled task
+        self.client.force_authenticate(user=self.agent_user)
+        res_start = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/")
+        self.assertEqual(res_start.status_code, 400)
+        self.assertIn("status", res_start.data)
+
+        # Invariant check: remains cancelled
+        task.refresh_from_db()
+        order.refresh_from_db()
+        self.assertEqual(task.status, "cancelled")
+        self.assertEqual(order.order_status, "cancelled")
+
+    def test_agent_start_pickup_then_customer_cancellation_blocked_400(self):
+        order = self.create_order(order_status="accepted")
+        task = self.create_task(order, task_type="pickup", status="assigned")
+
+        # Agent starts task
+        self.client.force_authenticate(user=self.agent_user)
+        res_start = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/")
+        self.assertEqual(res_start.status_code, 200)
+        self.assertEqual(res_start.data["status"], "in_progress")
+
+        task.refresh_from_db()
+        order.refresh_from_db()
+        self.assertEqual(task.status, "in_progress")
+        self.assertEqual(order.order_status, "pickup_scheduled")
+
+        # Customer tries to cancel
+        self.client.force_authenticate(user=self.customer)
+        res_cancel = self.client.post(f"/api/orders/{order.id}/cancel/")
+        self.assertEqual(res_cancel.status_code, 400)
+        self.assertIn("in progress", str(res_cancel.data).lower())
+
+        # Invariant check: remains in_progress and pickup_scheduled
+        task.refresh_from_db()
+        order.refresh_from_db()
+        self.assertEqual(task.status, "in_progress")
+        self.assertEqual(order.order_status, "pickup_scheduled")
+
+    def test_agent_start_when_order_already_cancelled_blocked_400(self):
+        order = self.create_order(order_status="cancelled")
+        task = self.create_task(order, task_type="pickup", status="assigned")
+
+        self.client.force_authenticate(user=self.agent_user)
+        res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("order", res.data)
+
+    def test_agent_complete_pickup_when_order_already_cancelled_blocked_400(self):
+        order = self.create_order(order_status="cancelled")
+        task = self.create_task(order, task_type="pickup", status="in_progress")
+
+        self.client.force_authenticate(user=self.agent_user)
+        res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/complete/")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("order", res.data)
+
+    def test_repeated_agent_start_calls_fail_with_400(self):
+        order = self.create_order(order_status="accepted")
+        task = self.create_task(order, task_type="pickup", status="assigned")
+
+        self.client.force_authenticate(user=self.agent_user)
+        res_1 = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/")
+        self.assertEqual(res_1.status_code, 200)
+
+        # Repeated start
+        res_2 = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/")
+        self.assertEqual(res_2.status_code, 400)
+        self.assertIn("status", res_2.data)
+
+    def test_repeated_agent_complete_calls_fail_with_400(self):
+        order = self.create_order(order_status="accepted")
+        task = self.create_task(order, task_type="pickup", status="assigned")
+
+        self.client.force_authenticate(user=self.agent_user)
+        self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/")
+        res_1 = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/complete/")
+        self.assertEqual(res_1.status_code, 200)
+
+        # Repeated complete
+        res_2 = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/complete/")
+        self.assertEqual(res_2.status_code, 400)
+        self.assertIn("status", res_2.data)
+
+    def test_atomic_rollback_on_agent_start_if_order_transition_fails(self):
+        order = self.create_order(order_status="accepted")
+        task = self.create_task(order, task_type="pickup", status="assigned")
+
+        self.client.force_authenticate(user=self.agent_user)
+        with patch.object(Order, "transition_to", side_effect=ValidationError("Mock transition fail")):
+            res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/")
+            self.assertEqual(res.status_code, 400)
+
+        task.refresh_from_db()
+        order.refresh_from_db()
+        self.assertEqual(task.status, "assigned")
+        self.assertEqual(order.order_status, "accepted")
+
+    def test_agent_start_returns_409_on_deadlock_conflict(self):
+        order = self.create_order(order_status="accepted")
+        task = self.create_task(order, task_type="pickup", status="assigned")
+
+        self.client.force_authenticate(user=self.agent_user)
+        with patch.object(Order.objects, "select_for_update", side_effect=OperationalError("deadlock detected")):
+            res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/")
+            self.assertEqual(res.status_code, 409)
+            self.assertIn("concurrent update conflict", res.data["detail"].lower())
+
+    def test_agent_complete_returns_409_on_deadlock_conflict(self):
+        order = self.create_order(order_status="pickup_scheduled")
+        task = self.create_task(order, task_type="pickup", status="in_progress")
+
+        self.client.force_authenticate(user=self.agent_user)
+        with patch.object(Order.objects, "select_for_update", side_effect=OperationalError("deadlock detected")):
+            res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/complete/")
+            self.assertEqual(res.status_code, 409)
+            self.assertIn("concurrent update conflict", res.data["detail"].lower())
+
+    def test_customer_cancel_returns_409_on_deadlock_conflict(self):
+        order = self.create_order(order_status="accepted")
+        self.create_task(order, task_type="pickup", status="assigned")
+
+        self.client.force_authenticate(user=self.customer)
+        with patch.object(Order.objects, "select_for_update", side_effect=OperationalError("deadlock detected")):
+            res = self.client.post(f"/api/orders/{order.id}/cancel/")
+            self.assertEqual(res.status_code, 409)
+            self.assertIn("concurrent update conflict", res.data["detail"].lower())
+
+    def test_shop_admin_assign_returns_409_on_deadlock_conflict(self):
+        order = self.create_order(order_status="accepted")
+        task = self.create_task(order, task_type="pickup", status="unassigned", delivery_agent=None)
+
+        self.client.force_authenticate(user=self.shop_admin)
+        with patch.object(Order.objects, "select_for_update", side_effect=OperationalError("deadlock detected")):
+            res = self.client.post(
+                f"/api/shop-admin/delivery-tasks/{task.id}/assign/",
+                {"delivery_agent_id": self.agent.id},
+                format="json",
+            )
+            self.assertEqual(res.status_code, 409)
+            self.assertIn("concurrent update conflict", res.data["detail"].lower())
+
+
+class DeliveryAgentPostgresConcurrencyTests(APITransactionTestCase):
+    """
+    Real multi-threaded concurrency tests executing against PostgreSQL
+    with real connections, transactions, and row-level locking.
+    """
+
+    def setUp(self):
+        self.password = "StrongPassword123!"
+
+        self.shop_admin = User.objects.create_user(
+            username="pg_conc_admin",
+            email="pg_admin@example.com",
+            password=self.password,
+            role="shop_admin",
+        )
+        self.shop = Shop.objects.create(
+            shop_admin=self.shop_admin,
+            shop_name="PG Concurrency Cleaners",
+            contact_number="9876543210",
+            address_line="200 Concurrency Road",
+            city="Kochi",
+            district="Ernakulam",
+            state="Kerala",
+            pincode="682001",
+            opening_time=time(9),
+            closing_time=time(18),
+            is_approved=True,
+        )
+        self.customer = User.objects.create_user(
+            username="pg_conc_customer",
+            email="pg_cust@example.com",
+            password=self.password,
+            role="customer",
+        )
+        self.agent_user = User.objects.create_user(
+            username="pg_conc_agent",
+            email="pg_agent@example.com",
+            password=self.password,
+            role="delivery_agent",
+        )
+        self.agent = DeliveryAgent.objects.create(
+            user=self.agent_user,
+            shop=self.shop,
+            shift_starts_at=time(8),
+            shift_ends_at=time(20),
+            is_online=True,
+        )
+
+    def test_concurrent_customer_cancel_and_agent_start_race(self):
+        order = Order.objects.create(
+            customer=self.customer,
+            shop=self.shop,
+            pickup_address_line="Flat 1A, River Road",
+            pickup_city="Kochi",
+            pickup_district="Ernakulam",
+            pickup_state="Kerala",
+            pickup_pincode="682001",
+            total_amount=Decimal("150.00"),
+            order_status="accepted",
+            payment_status="pending",
+        )
+        task = order.delivery_tasks.filter(task_type="pickup").first()
+        if not task:
+            task = DeliveryTask.objects.create(
+                order=order,
+                task_type="pickup",
+                status="assigned",
+                delivery_agent=self.agent,
+            )
+        else:
+            task.status = "assigned"
+            task.delivery_agent = self.agent
+            task.save()
+
+        results = {}
+        barrier = threading.Barrier(2)
+
+        def customer_thread():
+            try:
+                client = APIClient()
+                client.force_authenticate(user=self.customer)
+                barrier.wait(timeout=5)
+                res = client.post(f"/api/orders/{order.id}/cancel/")
+                results["customer"] = res.status_code
+            except Exception as e:
+                results["customer_error"] = str(e)
+            finally:
+                connections.close_all()
+
+        def agent_thread():
+            try:
+                client = APIClient()
+                client.force_authenticate(user=self.agent_user)
+                barrier.wait(timeout=5)
+                res = client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/")
+                results["agent"] = res.status_code
+            except Exception as e:
+                results["agent_error"] = str(e)
+            finally:
+                connections.close_all()
+
+        t1 = threading.Thread(target=customer_thread)
+        t2 = threading.Thread(target=agent_thread)
+
+        t1.start()
+        t2.start()
+
+        t1.join(timeout=10)
+        t2.join(timeout=10)
+
+        # Neither thread should raise uncaught Python exception
+        self.assertNotIn("customer_error", results)
+        self.assertNotIn("agent_error", results)
+
+        cust_status = results.get("customer")
+        agent_status = results.get("agent")
+
+        # Crucial check: NEITHER thread got HTTP 500 (deadlock)!
+        self.assertNotEqual(cust_status, 500, "Customer cancel returned HTTP 500!")
+        self.assertNotEqual(agent_status, 500, "Agent start returned HTTP 500!")
+
+        # Both actions completed cleanly with expected HTTP responses
+        self.assertIn(cust_status, [200, 400, 409])
+        self.assertIn(agent_status, [200, 400, 409])
+
+        order.refresh_from_db()
+        task.refresh_from_db()
+
+        if cust_status == 200:
+            # Customer cancel won the race: order and task cancelled, agent start rejected
+            self.assertEqual(order.order_status, "cancelled")
+            self.assertEqual(task.status, "cancelled")
+            self.assertEqual(agent_status, 400)
+        elif agent_status == 200:
+            # Agent start won the race: order pickup_scheduled, task in_progress, customer cancel rejected
+            self.assertEqual(order.order_status, "pickup_scheduled")
+            self.assertEqual(task.status, "in_progress")
+            self.assertEqual(cust_status, 400)
