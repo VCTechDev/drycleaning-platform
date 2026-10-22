@@ -1,9 +1,12 @@
+
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
+from django.utils import timezone
 from rest_framework import serializers
 
 from logistics.models import DeliveryAgent, DeliveryTask
+from orders.models import Order
 from users.models import User
 
 
@@ -280,3 +283,214 @@ class ShopAdminDeliveryAgentUpdateSerializer(serializers.ModelSerializer):
             instance.save()
 
         return instance
+
+
+class ShopAdminDeliveryTaskOrderSerializer(serializers.ModelSerializer):
+    """Order representation for shop admin delivery task serialization."""
+
+    customer_name = serializers.SerializerMethodField()
+    customer_phone = serializers.CharField(source="customer.phone_number", read_only=True)
+    customer_email = serializers.CharField(source="customer.email", read_only=True)
+
+    class Meta:
+        model = Order
+        fields = (
+            "id",
+            "order_number",
+            "order_status",
+            "total_amount",
+            "customer_name",
+            "customer_phone",
+            "customer_email",
+            "pickup_address_line",
+            "pickup_city",
+            "pickup_district",
+            "pickup_state",
+            "pickup_pincode",
+            "note",
+        )
+        read_only_fields = fields
+
+    def get_customer_name(self, obj):
+        user = obj.customer
+        name = f"{user.first_name} {user.last_name}".strip()
+        return name if name else user.username
+
+
+class ShopAdminDeliveryTaskAgentSerializer(serializers.ModelSerializer):
+    """Delivery agent representation for shop admin delivery task serialization."""
+
+    username = serializers.CharField(source="user.username", read_only=True)
+    first_name = serializers.CharField(source="user.first_name", read_only=True)
+    last_name = serializers.CharField(source="user.last_name", read_only=True)
+    phone_number = serializers.CharField(source="user.phone_number", read_only=True)
+
+    class Meta:
+        model = DeliveryAgent
+        fields = (
+            "id",
+            "username",
+            "first_name",
+            "last_name",
+            "phone_number",
+            "is_active",
+            "is_online",
+            "shift_starts_at",
+            "shift_ends_at",
+        )
+        read_only_fields = fields
+
+
+class ShopAdminDeliveryTaskSerializer(serializers.ModelSerializer):
+    """Detailed read representation of DeliveryTask for Shop Admin."""
+
+    order = ShopAdminDeliveryTaskOrderSerializer(read_only=True)
+    delivery_agent = ShopAdminDeliveryTaskAgentSerializer(read_only=True)
+    delivery_agent_id = serializers.IntegerField(
+        source="delivery_agent.id",
+        read_only=True,
+        allow_null=True,
+    )
+    order_number = serializers.CharField(source="order.order_number", read_only=True)
+
+    class Meta:
+        model = DeliveryTask
+        fields = (
+            "id",
+            "order",
+            "order_number",
+            "task_type",
+            "status",
+            "delivery_agent",
+            "delivery_agent_id",
+            "scheduled_at",
+            "completed_at",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = fields
+
+
+class ShopAdminDeliveryTaskAssignSerializer(serializers.Serializer):
+    """Serializer for assigning or reassigning a delivery agent to a delivery task."""
+
+    delivery_agent_id = serializers.IntegerField(required=True)
+    scheduled_at = serializers.DateTimeField(required=False, allow_null=True)
+
+    ALLOWED_FIELDS = {"delivery_agent_id", "scheduled_at"}
+
+    def validate(self, attrs):
+        if hasattr(self, "initial_data") and isinstance(self.initial_data, dict):
+            unexpected = sorted(list(set(self.initial_data.keys()) - self.ALLOWED_FIELDS))
+            if unexpected:
+                raise serializers.ValidationError({
+                    field: f"Field '{field}' is not permitted in assignment request."
+                    for field in unexpected
+                })
+
+        task = self.context["task"]
+        shop = self.context["shop"]
+
+        # Reject assignment if task is terminal
+        if task.status in DeliveryTask.TERMINAL_STATUSES:
+            raise serializers.ValidationError({
+                "status": f"Cannot assign or reassign a task in terminal status '{task.status}'."
+            })
+
+        # Reject reassignment while task is in_progress
+        if task.status == DeliveryTask.STATUS_IN_PROGRESS:
+            raise serializers.ValidationError({
+                "status": "Cannot reassign a task that is currently in progress."
+            })
+
+        # Reject assignment if order is in terminal status
+        if task.order.order_status in Order.TERMINAL_STATUSES:
+            raise serializers.ValidationError({
+                "order": f"Cannot assign task for an order in terminal status '{task.order.order_status}'."
+            })
+
+        agent_id = attrs["delivery_agent_id"]
+        try:
+            agent = (
+                DeliveryAgent.objects.select_related("user", "shop")
+                .get(id=agent_id)
+            )
+        except DeliveryAgent.DoesNotExist:
+            raise serializers.ValidationError({
+                "delivery_agent_id": "Delivery agent does not exist."
+            })
+
+        if agent.shop_id != shop.id:
+            raise serializers.ValidationError({
+                "delivery_agent_id": "Delivery agent does not belong to your shop."
+            })
+
+        if not agent.is_active:
+            raise serializers.ValidationError({
+                "delivery_agent_id": "Cannot assign an inactive delivery agent."
+            })
+
+        if not agent.user.is_active:
+            raise serializers.ValidationError({
+                "delivery_agent_id": "Delivery agent user account is inactive."
+            })
+
+        scheduled_at = attrs.get("scheduled_at")
+        if scheduled_at is not None and scheduled_at < timezone.now():
+            raise serializers.ValidationError({
+                "scheduled_at": "Scheduled time cannot be in the past."
+            })
+
+        attrs["delivery_agent"] = agent
+        return attrs
+
+    def save(self):
+        task = self.context["task"]
+        agent = self.validated_data["delivery_agent"]
+        task.delivery_agent = agent
+        task.status = DeliveryTask.STATUS_ASSIGNED
+
+        if "scheduled_at" in self.validated_data and self.validated_data["scheduled_at"] is not None:
+            task.scheduled_at = self.validated_data["scheduled_at"]
+
+        task.save()
+        return task
+
+
+class ShopAdminDeliveryTaskUnassignSerializer(serializers.Serializer):
+    """Serializer for unassigning a delivery agent from a delivery task."""
+
+    def validate(self, attrs):
+        task = self.context["task"]
+
+        if hasattr(self, "initial_data") and isinstance(self.initial_data, dict):
+            if len(self.initial_data) > 0:
+                unexpected = sorted(list(self.initial_data.keys()))
+                raise serializers.ValidationError({
+                    field: f"Field '{field}' is not permitted in unassignment request."
+                    for field in unexpected
+                })
+
+        if task.status in DeliveryTask.TERMINAL_STATUSES:
+            raise serializers.ValidationError({
+                "status": f"Cannot unassign a task in terminal status '{task.status}'."
+            })
+
+        if task.status == DeliveryTask.STATUS_IN_PROGRESS:
+            raise serializers.ValidationError({
+                "status": "Cannot unassign a task that is currently in progress."
+            })
+
+        if task.order.order_status in Order.TERMINAL_STATUSES:
+            raise serializers.ValidationError({
+                "order": f"Cannot unassign task for an order in terminal status '{task.order.order_status}'."
+            })
+
+        return attrs
+
+    def save(self):
+        task = self.context["task"]
+        task.delivery_agent = None
+        task.status = DeliveryTask.STATUS_UNASSIGNED
+        task.save()
+        return task

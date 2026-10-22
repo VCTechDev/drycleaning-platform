@@ -1,9 +1,10 @@
-from datetime import time
+from datetime import time, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
 from django.contrib.auth.hashers import check_password
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from logistics.models import DeliveryAgent, DeliveryTask
@@ -733,3 +734,767 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
         self.assertFalse(res.data["is_online"])
         self.assertEqual(res.data["shift_starts_at"], time(9))
         self.assertEqual(res.data["shift_ends_at"], time(18))
+
+
+class ShopAdminDeliveryTaskManagementTests(APITestCase):
+
+    def setUp(self):
+        self.password = "StrongPassword123!"
+
+        # Shop 1 Admin & approved Shop 1
+        self.shop_admin_1 = User.objects.create_user(
+            username="task_shop1_admin",
+            email="task_shop1_admin@example.com",
+            password=self.password,
+            role="shop_admin",
+        )
+        self.shop_1 = Shop.objects.create(
+            shop_admin=self.shop_admin_1,
+            shop_name="Clean Express",
+            contact_number="9876543201",
+            address_line="100 Express Road",
+            city="Kochi",
+            district="Ernakulam",
+            state="Kerala",
+            pincode="682001",
+            opening_time=time(9),
+            closing_time=time(18),
+            is_approved=True,
+        )
+
+        # Shop 2 Admin & approved Shop 2
+        self.shop_admin_2 = User.objects.create_user(
+            username="task_shop2_admin",
+            email="task_shop2_admin@example.com",
+            password=self.password,
+            role="shop_admin",
+        )
+        self.shop_2 = Shop.objects.create(
+            shop_admin=self.shop_admin_2,
+            shop_name="Quick Wash",
+            contact_number="9876543202",
+            address_line="200 Quick Ave",
+            city="Kochi",
+            district="Ernakulam",
+            state="Kerala",
+            pincode="682001",
+            opening_time=time(9),
+            closing_time=time(18),
+            is_approved=True,
+        )
+
+        # Ineligible shop admins
+        self.unapproved_shop_admin = User.objects.create_user(
+            username="task_unapproved_admin",
+            email="task_unapproved@example.com",
+            password=self.password,
+            role="shop_admin",
+        )
+        self.unapproved_shop = Shop.objects.create(
+            shop_admin=self.unapproved_shop_admin,
+            shop_name="Pending Cleaners 2",
+            contact_number="9876543203",
+            address_line="300 Pending Blvd",
+            city="Kochi",
+            district="Ernakulam",
+            state="Kerala",
+            pincode="682001",
+            opening_time=time(9),
+            closing_time=time(18),
+            is_approved=False,
+        )
+        self.unlinked_shop_admin = User.objects.create_user(
+            username="task_unlinked_admin",
+            email="task_unlinked@example.com",
+            password=self.password,
+            role="shop_admin",
+        )
+
+        # Other roles
+        self.customer = User.objects.create_user(
+            username="task_customer",
+            email="task_customer@example.com",
+            first_name="Deepak",
+            last_name="Menon",
+            phone_number="9876543299",
+            password=self.password,
+            role="customer",
+        )
+        self.platform_admin = User.objects.create_user(
+            username="task_plat_admin",
+            email="task_plat_admin@example.com",
+            password=self.password,
+            role="platform_admin",
+        )
+
+        # Delivery Agents for Shop 1
+        # 1. Active, online agent
+        self.agent_user_1 = User.objects.create_user(
+            username="task_agent_1",
+            email="task_agent_1@example.com",
+            first_name="Rahul",
+            last_name="Nair",
+            phone_number="9876543210",
+            password=self.password,
+            role="delivery_agent",
+        )
+        self.agent_1 = DeliveryAgent.objects.create(
+            user=self.agent_user_1,
+            shop=self.shop_1,
+            shift_starts_at=time(9),
+            shift_ends_at=time(18),
+            is_active=True,
+            is_online=True,
+        )
+
+        # 2. Active, offline agent (for advance scheduling)
+        self.agent_user_offline = User.objects.create_user(
+            username="task_agent_offline",
+            email="task_agent_offline@example.com",
+            first_name="Sanjay",
+            last_name="Verma",
+            phone_number="9876543211",
+            password=self.password,
+            role="delivery_agent",
+        )
+        self.agent_offline = DeliveryAgent.objects.create(
+            user=self.agent_user_offline,
+            shop=self.shop_1,
+            shift_starts_at=time(9),
+            shift_ends_at=time(18),
+            is_active=True,
+            is_online=False,
+        )
+
+        # 3. Inactive agent profile
+        self.agent_user_inactive = User.objects.create_user(
+            username="task_agent_inactive",
+            email="task_agent_inactive@example.com",
+            password=self.password,
+            role="delivery_agent",
+        )
+        self.agent_inactive = DeliveryAgent.objects.create(
+            user=self.agent_user_inactive,
+            shop=self.shop_1,
+            shift_starts_at=time(9),
+            shift_ends_at=time(18),
+            is_active=False,
+            is_online=False,
+        )
+
+        # 4. Active agent profile with inactive user
+        self.agent_user_user_inactive = User.objects.create_user(
+            username="task_agent_user_inactive",
+            email="task_agent_user_inact@example.com",
+            password=self.password,
+            role="delivery_agent",
+            is_active=False,
+        )
+        self.agent_with_inactive_user = DeliveryAgent.objects.create(
+            user=self.agent_user_user_inactive,
+            shop=self.shop_1,
+            shift_starts_at=time(9),
+            shift_ends_at=time(18),
+            is_active=True,
+            is_online=False,
+        )
+
+        # Delivery Agent for Shop 2
+        self.agent_user_shop2 = User.objects.create_user(
+            username="task_agent_shop2",
+            email="task_agent_shop2@example.com",
+            password=self.password,
+            role="delivery_agent",
+        )
+        self.agent_shop2 = DeliveryAgent.objects.create(
+            user=self.agent_user_shop2,
+            shop=self.shop_2,
+            shift_starts_at=time(9),
+            shift_ends_at=time(18),
+            is_active=True,
+            is_online=True,
+        )
+
+    def create_order(self, shop=None, order_status="placed", order_number=None):
+        shop = shop or self.shop_1
+        order = Order.objects.create(
+            customer=self.customer,
+            shop=shop,
+            pickup_address_line="Flat 4B, Riverview Apartments",
+            pickup_city="Kochi",
+            pickup_district="Ernakulam",
+            pickup_state="Kerala",
+            pickup_pincode="682001",
+            total_amount=Decimal("150.00"),
+            order_status=order_status,
+            payment_status="pending",
+        )
+        if order_number:
+            order.order_number = order_number
+            order.save(update_fields=["order_number"])
+        return order
+
+    def create_task(self, order, task_type="pickup", status="unassigned", delivery_agent=None, scheduled_at=None):
+        task = DeliveryTask.objects.filter(order=order, task_type=task_type).first()
+        if not task:
+            return DeliveryTask.objects.create(
+                order=order,
+                task_type=task_type,
+                status=status,
+                delivery_agent=delivery_agent,
+                scheduled_at=scheduled_at,
+            )
+        task.status = status
+        task.delivery_agent = delivery_agent
+        task.scheduled_at = scheduled_at
+        task.save()
+        return task
+
+    # 1. Shop Admin can list own shop delivery tasks
+    def test_shop_admin_can_list_own_shop_delivery_tasks(self):
+        order_1 = self.create_order(self.shop_1)
+        task_1 = self.create_task(order_1, task_type="pickup", status="unassigned")
+        task_2 = self.create_task(order_1, task_type="delivery", status="assigned", delivery_agent=self.agent_1)
+
+        order_2 = self.create_order(self.shop_2)
+        self.create_task(order_2, task_type="pickup", status="unassigned")
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+        res = self.client.get("/api/shop-admin/delivery-tasks/")
+        self.assertEqual(res.status_code, 200, res.data)
+
+        results = res.data.get("results", res.data)
+        self.assertEqual(len(results), 2)
+        task_ids = [t["id"] for t in results]
+        self.assertIn(task_1.id, task_ids)
+        self.assertIn(task_2.id, task_ids)
+
+    # 2. Shop Admin can retrieve own shop task detail
+    def test_shop_admin_can_retrieve_own_shop_task_detail(self):
+        order = self.create_order(self.shop_1, order_number="DRY000888")
+        task = self.create_task(order, task_type="pickup", status="assigned", delivery_agent=self.agent_1)
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+        res = self.client.get(f"/api/shop-admin/delivery-tasks/{task.id}/")
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["id"], task.id)
+        self.assertEqual(res.data["task_type"], "pickup")
+        self.assertEqual(res.data["status"], "assigned")
+        self.assertEqual(res.data["order_number"], "DRY000888")
+        self.assertEqual(res.data["delivery_agent_id"], self.agent_1.id)
+        self.assertEqual(res.data["delivery_agent"]["username"], self.agent_user_1.username)
+        self.assertEqual(res.data["order"]["customer_name"], "Deepak Menon")
+        self.assertEqual(res.data["order"]["pickup_city"], "Kochi")
+
+    # 3. Shop Admin cannot retrieve another shop's task (returns 404)
+    def test_shop_admin_cannot_retrieve_another_shops_task_returns_404(self):
+        order_2 = self.create_order(self.shop_2)
+        task_2 = self.create_task(order_2, task_type="pickup", status="unassigned")
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+        res = self.client.get(f"/api/shop-admin/delivery-tasks/{task_2.id}/")
+        self.assertEqual(res.status_code, 404)
+
+    # 4. Filter tasks by type, status, agent ID, and assignment state
+    def test_filter_tasks_by_type_status_agent_and_assignment_state(self):
+        order = self.create_order(self.shop_1)
+        task_pickup = self.create_task(order, task_type="pickup", status="unassigned")
+        task_delivery = self.create_task(
+            order,
+            task_type="delivery",
+            status="assigned",
+            delivery_agent=self.agent_1,
+        )
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+
+        # Filter by task_type
+        res_pickup = self.client.get("/api/shop-admin/delivery-tasks/?task_type=pickup")
+        results = res_pickup.data.get("results", res_pickup.data)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["id"], task_pickup.id)
+
+        res_delivery = self.client.get("/api/shop-admin/delivery-tasks/?task_type=delivery")
+        results_del = res_delivery.data.get("results", res_delivery.data)
+        self.assertEqual(len(results_del), 1)
+        self.assertEqual(results_del[0]["id"], task_delivery.id)
+
+        # Filter by status
+        res_unassigned = self.client.get("/api/shop-admin/delivery-tasks/?status=unassigned")
+        self.assertEqual(len(res_unassigned.data.get("results", res_unassigned.data)), 1)
+
+        # Filter by is_assigned
+        res_assigned_true = self.client.get("/api/shop-admin/delivery-tasks/?is_assigned=true")
+        self.assertEqual(len(res_assigned_true.data.get("results", res_assigned_true.data)), 1)
+        self.assertEqual(res_assigned_true.data.get("results", res_assigned_true.data)[0]["id"], task_delivery.id)
+
+        res_assigned_false = self.client.get("/api/shop-admin/delivery-tasks/?is_assigned=false")
+        self.assertEqual(len(res_assigned_false.data.get("results", res_assigned_false.data)), 1)
+        self.assertEqual(res_assigned_false.data.get("results", res_assigned_false.data)[0]["id"], task_pickup.id)
+
+        # Filter by delivery_agent_id
+        res_by_agent = self.client.get(f"/api/shop-admin/delivery-tasks/?delivery_agent_id={self.agent_1.id}")
+        self.assertEqual(len(res_by_agent.data.get("results", res_by_agent.data)), 1)
+        self.assertEqual(res_by_agent.data.get("results", res_by_agent.data)[0]["id"], task_delivery.id)
+
+    # 5. Search tasks by order number and customer details
+    def test_search_tasks_by_order_number_and_customer_details(self):
+        order_custom = self.create_order(self.shop_1, order_number="SPECIAL-SEARCH-001")
+        task_search = self.create_task(order_custom, task_type="pickup", status="unassigned")
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+
+        res_search_num = self.client.get("/api/shop-admin/delivery-tasks/?search=SPECIAL-SEARCH")
+        results = res_search_num.data.get("results", res_search_num.data)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["id"], task_search.id)
+
+        res_search_name = self.client.get("/api/shop-admin/delivery-tasks/?search=Deepak")
+        self.assertTrue(len(res_search_name.data.get("results", res_search_name.data)) >= 1)
+
+    # 6. Unauthorized and ineligible roles rejected
+    def test_unauthorized_and_ineligible_roles_rejected_from_tasks(self):
+        # 1. Unauthenticated -> 401
+        res_unauth = self.client.get("/api/shop-admin/delivery-tasks/")
+        self.assertEqual(res_unauth.status_code, 401)
+
+        # 2. Customer -> 403
+        self.client.force_authenticate(user=self.customer)
+        self.assertEqual(self.client.get("/api/shop-admin/delivery-tasks/").status_code, 403)
+
+        # 3. Delivery Agent -> 403
+        self.client.force_authenticate(user=self.agent_user_1)
+        self.assertEqual(self.client.get("/api/shop-admin/delivery-tasks/").status_code, 403)
+
+        # 4. Platform Admin -> 403
+        self.client.force_authenticate(user=self.platform_admin)
+        self.assertEqual(self.client.get("/api/shop-admin/delivery-tasks/").status_code, 403)
+
+        # 5. Unapproved Shop Admin -> 403
+        self.client.force_authenticate(user=self.unapproved_shop_admin)
+        self.assertEqual(self.client.get("/api/shop-admin/delivery-tasks/").status_code, 403)
+
+        # 6. Unlinked Shop Admin -> 403
+        self.client.force_authenticate(user=self.unlinked_shop_admin)
+        self.assertEqual(self.client.get("/api/shop-admin/delivery-tasks/").status_code, 403)
+
+    # 7. Assign eligible active online agent successfully
+    def test_assign_eligible_active_online_agent_successfully(self):
+        order = self.create_order(self.shop_1)
+        task = self.create_task(order, task_type="pickup", status="unassigned")
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+        res = self.client.post(
+            f"/api/shop-admin/delivery-tasks/{task.id}/assign/",
+            {"delivery_agent_id": self.agent_1.id},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["status"], "assigned")
+        self.assertEqual(res.data["delivery_agent_id"], self.agent_1.id)
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, "assigned")
+        self.assertEqual(task.delivery_agent, self.agent_1)
+
+    # 8. Assign eligible active offline agent successfully (advance scheduling)
+    def test_assign_eligible_active_offline_agent_successfully(self):
+        order = self.create_order(self.shop_1)
+        task = self.create_task(order, task_type="pickup", status="unassigned")
+
+        self.assertFalse(self.agent_offline.is_online)
+        self.assertTrue(self.agent_offline.is_active)
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+        res = self.client.post(
+            f"/api/shop-admin/delivery-tasks/{task.id}/assign/",
+            {"delivery_agent_id": self.agent_offline.id},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["status"], "assigned")
+        self.assertEqual(res.data["delivery_agent_id"], self.agent_offline.id)
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, "assigned")
+        self.assertEqual(task.delivery_agent, self.agent_offline)
+
+    # 9. Assignment with valid scheduled_at
+    def test_assignment_with_valid_scheduled_at(self):
+        order = self.create_order(self.shop_1)
+        task = self.create_task(order, task_type="pickup", status="unassigned")
+        future_time = timezone.now() + timedelta(hours=3)
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+        res = self.client.post(
+            f"/api/shop-admin/delivery-tasks/{task.id}/assign/",
+            {
+                "delivery_agent_id": self.agent_1.id,
+                "scheduled_at": future_time.isoformat(),
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+
+        task.refresh_from_db()
+        self.assertIsNotNone(task.scheduled_at)
+        self.assertEqual(task.delivery_agent, self.agent_1)
+
+    # 10. Reassignment omitting scheduled_at preserves existing scheduled time
+    def test_reassignment_omitting_scheduled_at_preserves_existing_schedule(self):
+        order = self.create_order(self.shop_1)
+        existing_schedule = timezone.now() + timedelta(hours=5)
+        task = self.create_task(
+            order,
+            task_type="pickup",
+            status="assigned",
+            delivery_agent=self.agent_1,
+            scheduled_at=existing_schedule,
+        )
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+        res = self.client.post(
+            f"/api/shop-admin/delivery-tasks/{task.id}/assign/",
+            {"delivery_agent_id": self.agent_offline.id},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+
+        task.refresh_from_db()
+        self.assertEqual(task.delivery_agent, self.agent_offline)
+        self.assertIsNotNone(task.scheduled_at)
+        # Verify preserved
+        self.assertEqual(task.scheduled_at.year, existing_schedule.year)
+        self.assertEqual(task.scheduled_at.minute, existing_schedule.minute)
+
+    # 11. Reassignment before work starts succeeds
+    def test_successful_reassignment_before_work_starts(self):
+        order = self.create_order(self.shop_1)
+        task = self.create_task(
+            order,
+            task_type="pickup",
+            status="assigned",
+            delivery_agent=self.agent_1,
+        )
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+        res = self.client.post(
+            f"/api/shop-admin/delivery-tasks/{task.id}/assign/",
+            {"delivery_agent_id": self.agent_offline.id},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["delivery_agent_id"], self.agent_offline.id)
+
+        task.refresh_from_db()
+        self.assertEqual(task.delivery_agent, self.agent_offline)
+
+    # 12. Cross-shop agent assignment rejected with 400
+    def test_reject_cross_shop_agent_assignment_400(self):
+        order = self.create_order(self.shop_1)
+        task = self.create_task(order, task_type="pickup", status="unassigned")
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+        res = self.client.post(
+            f"/api/shop-admin/delivery-tasks/{task.id}/assign/",
+            {"delivery_agent_id": self.agent_shop2.id},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("delivery_agent_id", res.data)
+
+        task.refresh_from_db()
+        self.assertIsNone(task.delivery_agent)
+
+    # 13. Inactive delivery agent profile rejected with 400
+    def test_reject_inactive_delivery_agent_assignment_400(self):
+        order = self.create_order(self.shop_1)
+        task = self.create_task(order, task_type="pickup", status="unassigned")
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+        res = self.client.post(
+            f"/api/shop-admin/delivery-tasks/{task.id}/assign/",
+            {"delivery_agent_id": self.agent_inactive.id},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("delivery_agent_id", res.data)
+
+    # 14. Inactive user account delivery agent rejected with 400
+    def test_reject_inactive_user_account_agent_assignment_400(self):
+        order = self.create_order(self.shop_1)
+        task = self.create_task(order, task_type="pickup", status="unassigned")
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+        res = self.client.post(
+            f"/api/shop-admin/delivery-tasks/{task.id}/assign/",
+            {"delivery_agent_id": self.agent_with_inactive_user.id},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("delivery_agent_id", res.data)
+
+    # 15. Completed, failed, and cancelled tasks cannot be assigned
+    def test_reject_assignment_on_terminal_tasks_400(self):
+        for term_status in ["completed", "failed", "cancelled"]:
+            with self.subTest(status=term_status):
+                order = self.create_order(self.shop_1)
+                task = self.create_task(
+                    order,
+                    task_type="pickup",
+                    status=term_status,
+                )
+                self.client.force_authenticate(user=self.shop_admin_1)
+                res = self.client.post(
+                    f"/api/shop-admin/delivery-tasks/{task.id}/assign/",
+                    {"delivery_agent_id": self.agent_1.id},
+                    format="json",
+                )
+                self.assertEqual(res.status_code, 400, res.data)
+                self.assertIn("status", res.data)
+
+    # 16. Tasks associated with terminal orders cannot be assigned
+    def test_reject_assignment_when_order_is_terminal_400(self):
+        order_cancelled = self.create_order(self.shop_1, order_status="cancelled")
+        task = self.create_task(order_cancelled, task_type="pickup", status="unassigned")
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+        res = self.client.post(
+            f"/api/shop-admin/delivery-tasks/{task.id}/assign/",
+            {"delivery_agent_id": self.agent_1.id},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("order", res.data)
+
+    # 17. in_progress tasks cannot be reassigned
+    def test_reject_reassignment_when_task_is_in_progress_400(self):
+        order = self.create_order(self.shop_1)
+        task = self.create_task(
+            order,
+            task_type="pickup",
+            status="in_progress",
+            delivery_agent=self.agent_1,
+        )
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+        res = self.client.post(
+            f"/api/shop-admin/delivery-tasks/{task.id}/assign/",
+            {"delivery_agent_id": self.agent_offline.id},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("status", res.data)
+
+    # 18. Invalid or past scheduled_at rejected with 400
+    def test_reject_invalid_or_old_scheduled_at_400(self):
+        order = self.create_order(self.shop_1)
+        task = self.create_task(order, task_type="pickup", status="unassigned")
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+
+        # 1. Days in the past
+        past_time_days = timezone.now() - timedelta(days=2)
+        res_days = self.client.post(
+            f"/api/shop-admin/delivery-tasks/{task.id}/assign/",
+            {
+                "delivery_agent_id": self.agent_1.id,
+                "scheduled_at": past_time_days.isoformat(),
+            },
+            format="json",
+        )
+        self.assertEqual(res_days.status_code, 400, res_days.data)
+        self.assertIn("scheduled_at", res_days.data)
+
+        # 2. Minutes in the past (previously permitted under 1-hour tolerance, now strictly rejected)
+        past_time_mins = timezone.now() - timedelta(minutes=15)
+        res_mins = self.client.post(
+            f"/api/shop-admin/delivery-tasks/{task.id}/assign/",
+            {
+                "delivery_agent_id": self.agent_1.id,
+                "scheduled_at": past_time_mins.isoformat(),
+            },
+            format="json",
+        )
+        self.assertEqual(res_mins.status_code, 400, res_mins.data)
+        self.assertIn("scheduled_at", res_mins.data)
+
+        # 3. Malformed date string
+        res_malformed = self.client.post(
+            f"/api/shop-admin/delivery-tasks/{task.id}/assign/",
+            {
+                "delivery_agent_id": self.agent_1.id,
+                "scheduled_at": "not-a-valid-datetime",
+            },
+            format="json",
+        )
+        self.assertEqual(res_malformed.status_code, 400, res_malformed.data)
+        self.assertIn("scheduled_at", res_malformed.data)
+
+    # 19. Unexpected fields or nonexistent agent ID rejected with 400
+    def test_reject_unexpected_fields_or_nonexistent_agent_id_400(self):
+        order = self.create_order(self.shop_1)
+        task = self.create_task(order, task_type="pickup", status="unassigned")
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+
+        # Nonexistent agent
+        res_nonexist = self.client.post(
+            f"/api/shop-admin/delivery-tasks/{task.id}/assign/",
+            {"delivery_agent_id": 999999},
+            format="json",
+        )
+        self.assertEqual(res_nonexist.status_code, 400)
+        self.assertIn("delivery_agent_id", res_nonexist.data)
+
+        # Unexpected fields
+        res_unexpected = self.client.post(
+            f"/api/shop-admin/delivery-tasks/{task.id}/assign/",
+            {
+                "delivery_agent_id": self.agent_1.id,
+                "status": "completed",
+                "task_type": "delivery",
+            },
+            format="json",
+        )
+        self.assertEqual(res_unexpected.status_code, 400)
+        self.assertIn("status", res_unexpected.data)
+        self.assertIn("task_type", res_unexpected.data)
+
+    # 20. Another shop's task cannot be assigned (returns 404)
+    def test_cross_shop_task_assignment_returns_404(self):
+        order_2 = self.create_order(self.shop_2)
+        task_2 = self.create_task(order_2, task_type="pickup", status="unassigned")
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+        res = self.client.post(
+            f"/api/shop-admin/delivery-tasks/{task_2.id}/assign/",
+            {"delivery_agent_id": self.agent_1.id},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 404)
+
+    # 21. Successful unassignment before work starts
+    def test_successful_unassignment_before_work_starts(self):
+        order = self.create_order(self.shop_1)
+        task = self.create_task(
+            order,
+            task_type="pickup",
+            status="assigned",
+            delivery_agent=self.agent_1,
+        )
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+        res = self.client.post(f"/api/shop-admin/delivery-tasks/{task.id}/unassign/", {}, format="json")
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["status"], "unassigned")
+        self.assertIsNone(res.data["delivery_agent"])
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, "unassigned")
+        self.assertIsNone(task.delivery_agent)
+
+    # 22. Unassignment preserves existing scheduled_at
+    def test_unassignment_preserves_existing_scheduled_at(self):
+        order = self.create_order(self.shop_1)
+        scheduled_time = timezone.now() + timedelta(hours=4)
+        task = self.create_task(
+            order,
+            task_type="pickup",
+            status="assigned",
+            delivery_agent=self.agent_1,
+            scheduled_at=scheduled_time,
+        )
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+        res = self.client.post(f"/api/shop-admin/delivery-tasks/{task.id}/unassign/", {}, format="json")
+        self.assertEqual(res.status_code, 200, res.data)
+
+        task.refresh_from_db()
+        self.assertIsNone(task.delivery_agent)
+        self.assertEqual(task.status, "unassigned")
+        self.assertIsNotNone(task.scheduled_at)
+
+    # 23. Unassignment of already unassigned task is safe and idempotent
+    def test_unassignment_of_already_unassigned_task_is_safe_and_idempotent(self):
+        order = self.create_order(self.shop_1)
+        task = self.create_task(order, task_type="pickup", status="unassigned")
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+        res = self.client.post(f"/api/shop-admin/delivery-tasks/{task.id}/unassign/", {}, format="json")
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["status"], "unassigned")
+        self.assertIsNone(res.data["delivery_agent"])
+
+    # 24. Terminal tasks cannot be unassigned
+    def test_reject_unassignment_on_terminal_tasks_400(self):
+        order = self.create_order(self.shop_1)
+        task = self.create_task(order, task_type="pickup", status="cancelled")
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+        res = self.client.post(f"/api/shop-admin/delivery-tasks/{task.id}/unassign/", {}, format="json")
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("status", res.data)
+
+    # 25. in_progress tasks cannot be unassigned
+    def test_reject_unassignment_when_task_is_in_progress_400(self):
+        order = self.create_order(self.shop_1)
+        task = self.create_task(
+            order,
+            task_type="pickup",
+            status="in_progress",
+            delivery_agent=self.agent_1,
+        )
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+        res = self.client.post(f"/api/shop-admin/delivery-tasks/{task.id}/unassign/", {}, format="json")
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("status", res.data)
+
+    # 26. Tasks associated with terminal orders cannot be unassigned
+    def test_reject_unassignment_when_order_is_terminal_400(self):
+        order = self.create_order(self.shop_1, order_status="cancelled")
+        task = self.create_task(
+            order,
+            task_type="pickup",
+            status="assigned",
+            delivery_agent=self.agent_1,
+        )
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+        res = self.client.post(f"/api/shop-admin/delivery-tasks/{task.id}/unassign/", {}, format="json")
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("order", res.data)
+
+    # 27. Cross-shop unassignment returns 404
+    def test_cross_shop_unassignment_returns_404(self):
+        order_2 = self.create_order(self.shop_2)
+        task_2 = self.create_task(
+            order_2,
+            task_type="pickup",
+            status="assigned",
+            delivery_agent=self.agent_shop2,
+        )
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+        res = self.client.post(f"/api/shop-admin/delivery-tasks/{task_2.id}/unassign/", {}, format="json")
+        self.assertEqual(res.status_code, 404)
+
+    # 28. Unassignment rejects unexpected body fields
+    def test_unassignment_rejects_unexpected_body_fields_400(self):
+        order = self.create_order(self.shop_1)
+        task = self.create_task(
+            order,
+            task_type="pickup",
+            status="assigned",
+            delivery_agent=self.agent_1,
+        )
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+        res = self.client.post(
+            f"/api/shop-admin/delivery-tasks/{task.id}/unassign/",
+            {"force": True},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("force", res.data)

@@ -37,6 +37,10 @@ class IsShopAdmin(BasePermission):
 
         if hasattr(obj, "shop"):
             return obj.shop == shop
+        if hasattr(obj, "order"):
+            order = getattr(obj, "order", None)
+            if order and hasattr(order, "shop"):
+                return order.shop == shop
         if hasattr(obj, "shop_admin"):
             return obj.shop_admin == request.user
         return obj == shop
