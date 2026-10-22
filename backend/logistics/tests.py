@@ -1498,3 +1498,593 @@ class ShopAdminDeliveryTaskManagementTests(APITestCase):
         )
         self.assertEqual(res.status_code, 400, res.data)
         self.assertIn("force", res.data)
+
+
+class DeliveryAgentTaskWorkflowTests(APITestCase):
+
+    def setUp(self):
+        self.password = "StrongPassword123!"
+
+        # Shop 1 & Admin
+        self.shop_admin_1 = User.objects.create_user(
+            username="wf_shop_admin_1",
+            email="wf_shop_admin_1@example.com",
+            password=self.password,
+            role="shop_admin",
+        )
+        self.shop_1 = Shop.objects.create(
+            shop_admin=self.shop_admin_1,
+            shop_name="Express Laundry",
+            contact_number="9876543201",
+            address_line="100 Express Road",
+            city="Kochi",
+            district="Ernakulam",
+            state="Kerala",
+            pincode="682001",
+            opening_time=time(9),
+            closing_time=time(18),
+            is_approved=True,
+        )
+
+        # Shop 2 & Admin
+        self.shop_admin_2 = User.objects.create_user(
+            username="wf_shop_admin_2",
+            email="wf_shop_admin_2@example.com",
+            password=self.password,
+            role="shop_admin",
+        )
+        self.shop_2 = Shop.objects.create(
+            shop_admin=self.shop_admin_2,
+            shop_name="Clean Wave",
+            contact_number="9876543202",
+            address_line="200 Wave Street",
+            city="Kochi",
+            district="Ernakulam",
+            state="Kerala",
+            pincode="682001",
+            opening_time=time(9),
+            closing_time=time(18),
+            is_approved=True,
+        )
+
+        # Customer & Platform Admin
+        self.customer = User.objects.create_user(
+            username="wf_customer",
+            email="wf_customer@example.com",
+            first_name="Deepak",
+            last_name="Menon",
+            phone_number="9876543299",
+            password=self.password,
+            role="customer",
+        )
+        self.platform_admin = User.objects.create_user(
+            username="wf_plat_admin",
+            email="wf_plat_admin@example.com",
+            password=self.password,
+            role="platform_admin",
+        )
+
+        # Agent 1 (Active, online, shop 1)
+        self.agent_user_1 = User.objects.create_user(
+            username="wf_agent_1",
+            email="wf_agent_1@example.com",
+            first_name="Rahul",
+            last_name="Nair",
+            phone_number="9876543210",
+            password=self.password,
+            role="delivery_agent",
+        )
+        self.agent_1 = DeliveryAgent.objects.create(
+            user=self.agent_user_1,
+            shop=self.shop_1,
+            shift_starts_at=time(9),
+            shift_ends_at=time(18),
+            is_active=True,
+            is_online=True,
+        )
+
+        # Agent 2 (Active, online, shop 1 - peer agent)
+        self.agent_user_2 = User.objects.create_user(
+            username="wf_agent_2",
+            email="wf_agent_2@example.com",
+            first_name="Sanjay",
+            last_name="Verma",
+            phone_number="9876543211",
+            password=self.password,
+            role="delivery_agent",
+        )
+        self.agent_2 = DeliveryAgent.objects.create(
+            user=self.agent_user_2,
+            shop=self.shop_1,
+            shift_starts_at=time(9),
+            shift_ends_at=time(18),
+            is_active=True,
+            is_online=True,
+        )
+
+        # Inactive Agent Profile
+        self.agent_user_inactive = User.objects.create_user(
+            username="wf_agent_inact",
+            email="wf_agent_inact@example.com",
+            password=self.password,
+            role="delivery_agent",
+        )
+        self.agent_inactive = DeliveryAgent.objects.create(
+            user=self.agent_user_inactive,
+            shop=self.shop_1,
+            shift_starts_at=time(9),
+            shift_ends_at=time(18),
+            is_active=False,
+            is_online=False,
+        )
+
+        # Active Profile with Inactive User Account
+        self.agent_user_user_inactive = User.objects.create_user(
+            username="wf_agent_user_inact",
+            email="wf_agent_user_inact@example.com",
+            password=self.password,
+            role="delivery_agent",
+            is_active=False,
+        )
+        self.agent_with_inactive_user = DeliveryAgent.objects.create(
+            user=self.agent_user_user_inactive,
+            shop=self.shop_1,
+            shift_starts_at=time(9),
+            shift_ends_at=time(18),
+            is_active=True,
+            is_online=False,
+        )
+
+    def create_order(self, shop=None, order_status="placed", order_number=None):
+        shop = shop or self.shop_1
+        order = Order.objects.create(
+            customer=self.customer,
+            shop=shop,
+            pickup_address_line="Flat 4B, Riverview Apartments",
+            pickup_city="Kochi",
+            pickup_district="Ernakulam",
+            pickup_state="Kerala",
+            pickup_pincode="682001",
+            note="Ring bell twice",
+            total_amount=Decimal("150.00"),
+            order_status=order_status,
+            payment_status="pending",
+        )
+        if order_number:
+            order.order_number = order_number
+            order.save(update_fields=["order_number"])
+        return order
+
+    def create_task(self, order, task_type="pickup", status="unassigned", delivery_agent=None, scheduled_at=None):
+        task = DeliveryTask.objects.filter(order=order, task_type=task_type).first()
+        if not task:
+            return DeliveryTask.objects.create(
+                order=order,
+                task_type=task_type,
+                status=status,
+                delivery_agent=delivery_agent,
+                scheduled_at=scheduled_at,
+            )
+        task.status = status
+        task.delivery_agent = delivery_agent
+        task.scheduled_at = scheduled_at
+        task.save()
+        return task
+
+    # ==========================================
+    # Access Control Tests
+    # ==========================================
+
+    def test_agent_can_list_only_own_assigned_tasks(self):
+        order_1 = self.create_order(self.shop_1)
+        task_1 = self.create_task(order_1, task_type="pickup", status="assigned", delivery_agent=self.agent_1)
+
+        order_2 = self.create_order(self.shop_1)
+        task_2 = self.create_task(order_2, task_type="delivery", status="assigned", delivery_agent=self.agent_1)
+
+        # Peer agent task
+        order_3 = self.create_order(self.shop_1)
+        task_3 = self.create_task(order_3, task_type="pickup", status="assigned", delivery_agent=self.agent_2)
+
+        # Unassigned task
+        order_4 = self.create_order(self.shop_1)
+        task_4 = self.create_task(order_4, task_type="pickup", status="unassigned")
+
+        self.client.force_authenticate(user=self.agent_user_1)
+        res = self.client.get("/api/delivery-agent/delivery-tasks/")
+        self.assertEqual(res.status_code, 200)
+
+        # Handle pagination or flat list
+        tasks_data = res.data["results"] if "results" in res.data else res.data
+        task_ids = {t["id"] for t in tasks_data}
+        self.assertEqual(task_ids, {task_1.id, task_2.id})
+        self.assertNotIn(task_3.id, task_ids)
+        self.assertNotIn(task_4.id, task_ids)
+
+    def test_agent_can_retrieve_own_assigned_task_with_sanitized_fields(self):
+        order = self.create_order(self.shop_1)
+        task = self.create_task(order, task_type="pickup", status="assigned", delivery_agent=self.agent_1)
+
+        self.client.force_authenticate(user=self.agent_user_1)
+        res = self.client.get(f"/api/delivery-agent/delivery-tasks/{task.id}/")
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["id"], task.id)
+        self.assertEqual(res.data["task_type"], "pickup")
+        self.assertEqual(res.data["status"], "assigned")
+
+        # Check sanitized order fields
+        order_data = res.data["order"]
+        self.assertEqual(order_data["order_number"], order.order_number)
+        self.assertEqual(order_data["customer_name"], "Deepak Menon")
+        self.assertEqual(order_data["customer_phone"], "9876543299")
+        self.assertEqual(order_data["pickup_address_line"], "Flat 4B, Riverview Apartments")
+        self.assertEqual(order_data["pickup_city"], "Kochi")
+        self.assertEqual(order_data["note"], "Ring bell twice")
+
+        # Ensure sensitive data is not exposed
+        self.assertNotIn("customer_email", order_data)
+        self.assertNotIn("total_amount", order_data)
+        self.assertNotIn("payment_status", order_data)
+        self.assertNotIn("rejection_reason", order_data)
+
+        # Check shop details
+        shop_data = res.data["shop"]
+        self.assertEqual(shop_data["shop_name"], "Express Laundry")
+        self.assertEqual(shop_data["contact_number"], "9876543201")
+        self.assertEqual(shop_data["address_line"], "100 Express Road")
+
+    def test_another_agents_task_returns_404_for_detail_and_actions(self):
+        order = self.create_order(self.shop_1)
+        task_peer = self.create_task(order, task_type="pickup", status="assigned", delivery_agent=self.agent_2)
+
+        self.client.force_authenticate(user=self.agent_user_1)
+
+        # Detail
+        res_get = self.client.get(f"/api/delivery-agent/delivery-tasks/{task_peer.id}/")
+        self.assertEqual(res_get.status_code, 404)
+
+        # Start
+        res_start = self.client.post(f"/api/delivery-agent/delivery-tasks/{task_peer.id}/start/")
+        self.assertEqual(res_start.status_code, 404)
+
+        # Complete
+        res_complete = self.client.post(f"/api/delivery-agent/delivery-tasks/{task_peer.id}/complete/")
+        self.assertEqual(res_complete.status_code, 404)
+
+    def test_unauthenticated_and_ineligible_roles_denied(self):
+        order = self.create_order(self.shop_1)
+        task = self.create_task(order, task_type="pickup", status="assigned", delivery_agent=self.agent_1)
+
+        # Unauthenticated -> 401
+        self.client.force_authenticate(user=None)
+        self.assertEqual(self.client.get("/api/delivery-agent/delivery-tasks/").status_code, 401)
+        self.assertEqual(self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/").status_code, 401)
+
+        # Customer -> 403
+        self.client.force_authenticate(user=self.customer)
+        self.assertEqual(self.client.get("/api/delivery-agent/delivery-tasks/").status_code, 403)
+        self.assertEqual(self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/").status_code, 403)
+
+        # Shop Admin -> 403
+        self.client.force_authenticate(user=self.shop_admin_1)
+        self.assertEqual(self.client.get("/api/delivery-agent/delivery-tasks/").status_code, 403)
+        self.assertEqual(self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/").status_code, 403)
+
+        # Platform Admin -> 403
+        self.client.force_authenticate(user=self.platform_admin)
+        self.assertEqual(self.client.get("/api/delivery-agent/delivery-tasks/").status_code, 403)
+        self.assertEqual(self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/").status_code, 403)
+
+    def test_inactive_agent_profile_and_inactive_user_denied(self):
+        order = self.create_order(self.shop_1)
+        task = self.create_task(order, task_type="pickup", status="assigned", delivery_agent=self.agent_inactive)
+
+        # Inactive profile
+        self.client.force_authenticate(user=self.agent_user_inactive)
+        self.assertEqual(self.client.get("/api/delivery-agent/delivery-tasks/").status_code, 403)
+        self.assertEqual(self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/").status_code, 403)
+
+        # Inactive user account
+        self.client.force_authenticate(user=self.agent_user_user_inactive)
+        self.assertIn(self.client.get("/api/delivery-agent/delivery-tasks/").status_code, [401, 403])
+
+    def test_unassigned_tasks_return_404_on_detail_and_actions(self):
+        order = self.create_order(self.shop_1)
+        task_unassigned = self.create_task(order, task_type="pickup", status="unassigned")
+
+        self.client.force_authenticate(user=self.agent_user_1)
+        self.assertEqual(self.client.get(f"/api/delivery-agent/delivery-tasks/{task_unassigned.id}/").status_code, 404)
+        self.assertEqual(self.client.post(f"/api/delivery-agent/delivery-tasks/{task_unassigned.id}/start/").status_code, 404)
+        self.assertEqual(self.client.post(f"/api/delivery-agent/delivery-tasks/{task_unassigned.id}/complete/").status_code, 404)
+
+    def test_filter_tasks_by_type_status_and_scheduled_date(self):
+        target_date = timezone.localdate() + timedelta(days=1)
+        order_1 = self.create_order(self.shop_1)
+        task_1 = self.create_task(
+            order_1,
+            task_type="pickup",
+            status="assigned",
+            delivery_agent=self.agent_1,
+            scheduled_at=timezone.now() + timedelta(days=1),
+        )
+
+        order_2 = self.create_order(self.shop_1)
+        task_2 = self.create_task(
+            order_2,
+            task_type="delivery",
+            status="in_progress",
+            delivery_agent=self.agent_1,
+            scheduled_at=timezone.now() + timedelta(days=5),
+        )
+
+        self.client.force_authenticate(user=self.agent_user_1)
+
+        # Filter by task_type
+        res_type = self.client.get("/api/delivery-agent/delivery-tasks/?task_type=pickup")
+        items = res_type.data["results"] if "results" in res_type.data else res_type.data
+        self.assertEqual([t["id"] for t in items], [task_1.id])
+
+        # Filter by status
+        res_status = self.client.get("/api/delivery-agent/delivery-tasks/?status=in_progress")
+        items_st = res_status.data["results"] if "results" in res_status.data else res_status.data
+        self.assertEqual([t["id"] for t in items_st], [task_2.id])
+
+        # Filter by scheduled_date
+        res_date = self.client.get(f"/api/delivery-agent/delivery-tasks/?scheduled_date={target_date.isoformat()}")
+        items_dt = res_date.data["results"] if "results" in res_date.data else res_date.data
+        self.assertEqual([t["id"] for t in items_dt], [task_1.id])
+
+    # ==========================================
+    # Start Action Tests
+    # ==========================================
+
+    def test_start_assigned_pickup_task_transitions_task_and_order_to_pickup_scheduled(self):
+        order = self.create_order(self.shop_1, order_status="accepted")
+        task = self.create_task(order, task_type="pickup", status="assigned", delivery_agent=self.agent_1)
+
+        self.client.force_authenticate(user=self.agent_user_1)
+        res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/")
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["status"], "in_progress")
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, "in_progress")
+
+        order.refresh_from_db()
+        self.assertEqual(order.order_status, "pickup_scheduled")
+
+        # Verify OrderStatusHistory
+        history = order.status_history.order_by("created_at")
+        self.assertTrue(history.filter(status="pickup_scheduled").exists())
+
+    def test_start_assigned_delivery_task_keeps_order_status_ready(self):
+        order = self.create_order(self.shop_1, order_status="ready")
+        task = self.create_task(order, task_type="delivery", status="assigned", delivery_agent=self.agent_1)
+
+        self.client.force_authenticate(user=self.agent_user_1)
+        res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/")
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["status"], "in_progress")
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, "in_progress")
+
+        order.refresh_from_db()
+        self.assertEqual(order.order_status, "ready")
+
+    def test_task_with_no_schedule_can_start_at_any_time(self):
+        order = self.create_order(self.shop_1, order_status="accepted")
+        task = self.create_task(order, task_type="pickup", status="assigned", delivery_agent=self.agent_1, scheduled_at=None)
+
+        self.client.force_authenticate(user=self.agent_user_1)
+        res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/")
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["status"], "in_progress")
+
+    def test_future_scheduled_task_cannot_start_early_400(self):
+        order = self.create_order(self.shop_1, order_status="accepted")
+        future_time = timezone.now() + timedelta(hours=3)
+        task = self.create_task(order, task_type="pickup", status="assigned", delivery_agent=self.agent_1, scheduled_at=future_time)
+
+        self.client.force_authenticate(user=self.agent_user_1)
+        res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/")
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("scheduled_at", res.data)
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, "assigned")
+        order.refresh_from_db()
+        self.assertEqual(order.order_status, "accepted")
+
+    def test_scheduled_task_can_start_when_scheduled_time_arrived(self):
+        order = self.create_order(self.shop_1, order_status="accepted")
+        past_time = timezone.now() - timedelta(minutes=10)
+        task = self.create_task(order, task_type="pickup", status="assigned", delivery_agent=self.agent_1, scheduled_at=past_time)
+
+        self.client.force_authenticate(user=self.agent_user_1)
+        res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/")
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["status"], "in_progress")
+
+    def test_cannot_start_non_assigned_tasks_400(self):
+        self.client.force_authenticate(user=self.agent_user_1)
+
+        for non_assigned_status in ["in_progress", "completed", "failed", "cancelled"]:
+            with self.subTest(status=non_assigned_status):
+                order = self.create_order(self.shop_1, order_status="accepted")
+                task = self.create_task(order, task_type="pickup", status=non_assigned_status, delivery_agent=self.agent_1)
+                res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/")
+                self.assertEqual(res.status_code, 400, res.data)
+                self.assertIn("status", res.data)
+
+    def test_start_rejected_if_order_is_terminal_400(self):
+        self.client.force_authenticate(user=self.agent_user_1)
+
+        for term_status in ["cancelled", "rejected", "delivered"]:
+            with self.subTest(term_status=term_status):
+                order = self.create_order(self.shop_1, order_status=term_status)
+                task = self.create_task(order, task_type="pickup", status="assigned", delivery_agent=self.agent_1)
+                res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/")
+                self.assertEqual(res.status_code, 400, res.data)
+                self.assertIn("order", res.data)
+
+    def test_start_pickup_rejected_if_order_not_accepted_or_pickup_scheduled_400(self):
+        self.client.force_authenticate(user=self.agent_user_1)
+
+        for bad_status in ["placed", "processing", "ready"]:
+            with self.subTest(bad_status=bad_status):
+                order = self.create_order(self.shop_1, order_status=bad_status)
+                task = self.create_task(order, task_type="pickup", status="assigned", delivery_agent=self.agent_1)
+                res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/")
+                self.assertEqual(res.status_code, 400, res.data)
+                self.assertIn("order_status", res.data)
+
+    def test_start_delivery_rejected_if_order_not_ready_400(self):
+        self.client.force_authenticate(user=self.agent_user_1)
+
+        for bad_status in ["placed", "accepted", "picked_up", "processing"]:
+            with self.subTest(bad_status=bad_status):
+                order = self.create_order(self.shop_1, order_status=bad_status)
+                task = self.create_task(order, task_type="delivery", status="assigned", delivery_agent=self.agent_1)
+                res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/")
+                self.assertEqual(res.status_code, 400, res.data)
+                self.assertIn("order_status", res.data)
+
+    def test_start_rejects_unexpected_body_payload_400(self):
+        order = self.create_order(self.shop_1, order_status="accepted")
+        task = self.create_task(order, task_type="pickup", status="assigned", delivery_agent=self.agent_1)
+
+        self.client.force_authenticate(user=self.agent_user_1)
+        res = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/start/",
+            {"extra_field": "disallowed"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("extra_field", res.data)
+
+    # ==========================================
+    # Complete Action Tests
+    # ==========================================
+
+    def test_complete_pickup_task_transitions_task_and_order_to_picked_up(self):
+        order = self.create_order(self.shop_1, order_status="pickup_scheduled")
+        task = self.create_task(order, task_type="pickup", status="in_progress", delivery_agent=self.agent_1)
+
+        self.client.force_authenticate(user=self.agent_user_1)
+        res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/complete/")
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["status"], "completed")
+        self.assertIsNotNone(res.data["completed_at"])
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, "completed")
+        self.assertIsNotNone(task.completed_at)
+
+        order.refresh_from_db()
+        self.assertEqual(order.order_status, "picked_up")
+
+        # Verify OrderStatusHistory
+        history = order.status_history.order_by("created_at")
+        self.assertTrue(history.filter(status="picked_up").exists())
+
+    def test_complete_delivery_task_transitions_task_and_order_to_delivered(self):
+        order = self.create_order(self.shop_1, order_status="ready")
+        task = self.create_task(order, task_type="delivery", status="in_progress", delivery_agent=self.agent_1)
+
+        self.client.force_authenticate(user=self.agent_user_1)
+        res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/complete/")
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["status"], "completed")
+        self.assertIsNotNone(res.data["completed_at"])
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, "completed")
+        self.assertIsNotNone(task.completed_at)
+
+        order.refresh_from_db()
+        self.assertEqual(order.order_status, "delivered")
+
+        # Verify OrderStatusHistory
+        history = order.status_history.order_by("created_at")
+        self.assertTrue(history.filter(status="delivered").exists())
+
+    def test_complete_without_starting_rejected_400(self):
+        order = self.create_order(self.shop_1, order_status="pickup_scheduled")
+        task = self.create_task(order, task_type="pickup", status="assigned", delivery_agent=self.agent_1)
+
+        self.client.force_authenticate(user=self.agent_user_1)
+        res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/complete/")
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("status", res.data)
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, "assigned")
+        self.assertIsNone(task.completed_at)
+
+    def test_repeated_completion_rejected_400(self):
+        order = self.create_order(self.shop_1, order_status="picked_up")
+        task = self.create_task(order, task_type="pickup", status="completed", delivery_agent=self.agent_1)
+
+        self.client.force_authenticate(user=self.agent_user_1)
+        res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/complete/")
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("status", res.data)
+
+    def test_complete_rejected_if_order_is_terminal_400(self):
+        self.client.force_authenticate(user=self.agent_user_1)
+
+        for term_status in ["cancelled", "rejected", "delivered"]:
+            with self.subTest(term_status=term_status):
+                order = self.create_order(self.shop_1, order_status=term_status)
+                task = self.create_task(order, task_type="pickup", status="in_progress", delivery_agent=self.agent_1)
+                res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/complete/")
+                self.assertEqual(res.status_code, 400, res.data)
+                self.assertIn("order", res.data)
+
+    def test_complete_pickup_rejected_if_order_not_pickup_scheduled_400(self):
+        order = self.create_order(self.shop_1, order_status="accepted")
+        task = self.create_task(order, task_type="pickup", status="in_progress", delivery_agent=self.agent_1)
+
+        self.client.force_authenticate(user=self.agent_user_1)
+        res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/complete/")
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("order_status", res.data)
+
+    def test_complete_delivery_rejected_if_order_not_ready_400(self):
+        order = self.create_order(self.shop_1, order_status="processing")
+        task = self.create_task(order, task_type="delivery", status="in_progress", delivery_agent=self.agent_1)
+
+        self.client.force_authenticate(user=self.agent_user_1)
+        res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/complete/")
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("order_status", res.data)
+
+    def test_complete_rejects_unexpected_body_payload_400(self):
+        order = self.create_order(self.shop_1, order_status="pickup_scheduled")
+        task = self.create_task(order, task_type="pickup", status="in_progress", delivery_agent=self.agent_1)
+
+        self.client.force_authenticate(user=self.agent_user_1)
+        res = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+            {"otp": "123456"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("otp", res.data)
+
+    def test_atomic_rollback_if_order_transition_fails(self):
+        order = self.create_order(self.shop_1, order_status="pickup_scheduled")
+        task = self.create_task(order, task_type="pickup", status="in_progress", delivery_agent=self.agent_1)
+
+        self.client.force_authenticate(user=self.agent_user_1)
+
+        with patch.object(Order, "transition_to", side_effect=ValidationError("Mock order transition failure")):
+            res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/complete/")
+            self.assertEqual(res.status_code, 400, res.data)
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, "in_progress")
+        self.assertIsNone(task.completed_at)
+        order.refresh_from_db()
+        self.assertEqual(order.order_status, "pickup_scheduled")

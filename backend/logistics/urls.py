@@ -3,11 +3,17 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     DeliveryAgentAvailabilityView,
+    DeliveryAgentTaskViewSet,
     ShopAdminDeliveryAgentViewSet,
     ShopAdminDeliveryTaskViewSet,
 )
 
 router = DefaultRouter()
+router.register(
+    "delivery-agent/delivery-tasks",
+    DeliveryAgentTaskViewSet,
+    basename="delivery-agent-delivery-tasks",
+)
 router.register(
     "shop-admin/delivery-agents",
     ShopAdminDeliveryAgentViewSet,
