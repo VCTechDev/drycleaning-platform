@@ -3,6 +3,7 @@ import {
     BriefcaseBusiness,
     LayoutDashboard,
     ShoppingCart,
+    Truck,
     UserPlus,
     Users,
     Wrench,
@@ -36,6 +37,11 @@ export const shopAdminNavigation: readonly ShopAdminNavigationItem[] = [
         label: "Service Requests",
         path: "/shop-admin/service-requests",
         icon: BriefcaseBusiness,
+    },
+    {
+        label: "Delivery Tasks",
+        path: "/shop-admin/delivery-tasks",
+        icon: Truck,
     },
     {
         label: "Delivery Agent Management",
