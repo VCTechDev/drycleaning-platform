@@ -198,3 +198,8 @@ CORS_ALLOW_HEADERS = [
 ]
 
 CORS_ALLOW_CREDENTIALS = True
+
+# Delivery Agent OTP Verification settings (Architecture Decision 26A)
+DELIVERY_OTP_INCORRECT_ATTEMPTS_THRESHOLD = int(
+    os.getenv("DELIVERY_OTP_INCORRECT_ATTEMPTS_THRESHOLD", "5")
+)

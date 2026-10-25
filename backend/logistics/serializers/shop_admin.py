@@ -361,6 +361,7 @@ class ShopAdminDeliveryTaskSerializer(serializers.ModelSerializer):
             "order_number",
             "task_type",
             "status",
+            "failure_reason",
             "delivery_agent",
             "delivery_agent_id",
             "scheduled_at",
@@ -449,6 +450,7 @@ class ShopAdminDeliveryTaskAssignSerializer(serializers.Serializer):
         agent = self.validated_data["delivery_agent"]
         task.delivery_agent = agent
         task.status = DeliveryTask.STATUS_ASSIGNED
+        task.failure_reason = ""
 
         if "scheduled_at" in self.validated_data and self.validated_data["scheduled_at"] is not None:
             task.scheduled_at = self.validated_data["scheduled_at"]
@@ -492,5 +494,6 @@ class ShopAdminDeliveryTaskUnassignSerializer(serializers.Serializer):
         task = self.context["task"]
         task.delivery_agent = None
         task.status = DeliveryTask.STATUS_UNASSIGNED
+        task.failure_reason = ""
         task.save()
         return task

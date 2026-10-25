@@ -78,7 +78,6 @@ class DeliveryTask(models.Model):
 
     TERMINAL_STATUSES = {
         STATUS_COMPLETED,
-        STATUS_FAILED,
         STATUS_CANCELLED,
     }
 
@@ -97,6 +96,7 @@ class DeliveryTask(models.Model):
 
     task_type = models.CharField(max_length=20, choices=TASK_TYPE)
     status = models.CharField(max_length=50, choices=STATUS, default="unassigned")
+    failure_reason = models.TextField(blank=True, default="")
     scheduled_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 
@@ -143,3 +143,78 @@ class DeliveryTask(models.Model):
 
     def __str__(self):
         return f"{self.order.order_number} - {self.task_type}"
+
+
+class DeliveryVerificationOTP(models.Model):
+    task = models.ForeignKey(
+        DeliveryTask,
+        on_delete=models.CASCADE,
+        related_name="verification_otps",
+    )
+    code_hash = models.CharField(max_length=128)
+    expires_at = models.DateTimeField()
+    consecutive_failed_attempts = models.PositiveSmallIntegerField(default=0)
+    cooldown_until = models.DateTimeField(null=True, blank=True)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    invalidated_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["task", "created_at"]),
+            models.Index(fields=["expires_at", "verified_at", "invalidated_at"]),
+        ]
+
+    def __str__(self):
+        return f"DeliveryOTP(task_id={self.task_id}, created={self.created_at})"
+
+
+class DeliveryOTPAuditLog(models.Model):
+    ACTION_GENERATED = "generated"
+    ACTION_RESENT = "resent"
+    ACTION_VERIFIED = "verified"
+    ACTION_FAILED_ATTEMPT = "failed_attempt"
+    ACTION_COOLDOWN_TRIGGERED = "cooldown_triggered"
+    ACTION_INVALIDATED = "invalidated"
+    ACTION_TASK_FAILED = "task_failed"
+
+    ACTION_CHOICES = (
+        (ACTION_GENERATED, "GENERATED"),
+        (ACTION_RESENT, "RESENT"),
+        (ACTION_VERIFIED, "VERIFIED"),
+        (ACTION_FAILED_ATTEMPT, "FAILED_ATTEMPT"),
+        (ACTION_COOLDOWN_TRIGGERED, "COOLDOWN_TRIGGERED"),
+        (ACTION_INVALIDATED, "INVALIDATED"),
+        (ACTION_TASK_FAILED, "TASK_FAILED"),
+    )
+
+    task = models.ForeignKey(
+        DeliveryTask,
+        on_delete=models.CASCADE,
+        related_name="otp_audit_logs",
+    )
+    delivery_agent = models.ForeignKey(
+        DeliveryAgent,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="otp_audit_logs",
+    )
+    action = models.CharField(max_length=40, choices=ACTION_CHOICES)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=255, blank=True, default="")
+    details = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["task", "created_at"]),
+            models.Index(fields=["action", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"DeliveryOTPAudit(task_id={self.task_id}, action={self.action}, created={self.created_at})"
