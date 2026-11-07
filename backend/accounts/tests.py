@@ -474,6 +474,7 @@ class PlatformAdminProfileTests(APITestCase):
             username="profile_delivery_agent",
             email="profile-delivery-agent@example.com",
             password=self.password,
+            phone_number="+919876544005",
             role="delivery_agent",
         )
 
@@ -689,6 +690,9 @@ class CustomerRoleAuthorizationTests(APITestCase):
                 username=f"{role}_user",
                 email=f"{role}@example.com",
                 password=password,
+                phone_number=(
+                    "+919876545010" if role == "delivery_agent" else None
+                ),
                 role=role,
             )
             for role in ("shop_admin", "delivery_agent", "platform_admin")

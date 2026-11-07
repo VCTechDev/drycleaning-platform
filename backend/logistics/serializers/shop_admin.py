@@ -1,13 +1,14 @@
 
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework import serializers
 
 from logistics.models import DeliveryAgent, DeliveryTask
 from orders.models import Order
 from users.models import User
+from users.phone import normalize_phone_number
 
 
 class DeliveryAgentUserSerializer(serializers.ModelSerializer):
@@ -39,6 +40,7 @@ class DeliveryAgentSerializer(serializers.ModelSerializer):
         model = DeliveryAgent
         fields = (
             "id",
+            "agent_id",
             "user",
             "shop",
             "shop_name",
@@ -46,16 +48,21 @@ class DeliveryAgentSerializer(serializers.ModelSerializer):
             "shift_ends_at",
             "is_active",
             "is_online",
+            "phone_verified",
+            "email_verified",
             "active_tasks_count",
             "created_at",
             "updated_at",
         )
         read_only_fields = (
             "id",
+            "agent_id",
             "user",
             "shop",
             "shop_name",
             "is_online",
+            "phone_verified",
+            "email_verified",
             "active_tasks_count",
             "created_at",
             "updated_at",
@@ -83,6 +90,8 @@ class ShopAdminDeliveryAgentRegisterSerializer(serializers.Serializer):
     )
     email = serializers.EmailField(
         required=True,
+        allow_blank=False,
+        allow_null=False,
         trim_whitespace=True,
     )
     password = serializers.CharField(
@@ -110,15 +119,16 @@ class ShopAdminDeliveryAgentRegisterSerializer(serializers.Serializer):
         trim_whitespace=True,
     )
     phone_number = serializers.CharField(
-        max_length=15,
-        required=False,
-        allow_blank=True,
-        default="",
+        max_length=16,
+        required=True,
+        allow_blank=False,
         trim_whitespace=True,
     )
     shift_starts_at = serializers.TimeField(required=True)
     shift_ends_at = serializers.TimeField(required=True)
     is_active = serializers.BooleanField(required=False, default=True)
+
+    PROTECTED_FIELDS = {"agent_id", "phone_verified", "email_verified"}
 
     def validate_username(self, value):
         username = value.strip()
@@ -129,12 +139,39 @@ class ShopAdminDeliveryAgentRegisterSerializer(serializers.Serializer):
         return username
 
     def validate_email(self, value):
-        email = value.strip().lower()
+        if value is None:
+            raise serializers.ValidationError("Email is required.")
+        email = str(value).strip().lower()
+        if not email:
+            raise serializers.ValidationError("Email cannot be blank.")
         if User.objects.filter(email__iexact=email).exists():
             raise serializers.ValidationError("A user with that email already exists.")
         return email
 
+    def validate_phone_number(self, value):
+        try:
+            phone_number = normalize_phone_number(value)
+        except DjangoValidationError as error:
+            raise serializers.ValidationError(error.messages) from error
+        if User.objects.filter(
+            role="delivery_agent",
+            phone_number=phone_number,
+        ).exists():
+            raise serializers.ValidationError(
+                "A delivery agent with that phone number already exists."
+            )
+        return phone_number
+
     def validate(self, attrs):
+        forbidden = sorted(
+            self.PROTECTED_FIELDS.intersection(self.initial_data.keys())
+        )
+        if forbidden:
+            raise serializers.ValidationError({
+                field: f"Field '{field}' is read-only and cannot be supplied."
+                for field in forbidden
+            })
+
         password = attrs.get("password")
         password_confirm = attrs.get("password_confirm")
 
@@ -168,30 +205,46 @@ class ShopAdminDeliveryAgentRegisterSerializer(serializers.Serializer):
         password = validated_data.pop("password")
         first_name = validated_data.pop("first_name", "")
         last_name = validated_data.pop("last_name", "")
-        phone_number = validated_data.pop("phone_number", "")
+        phone_number = validated_data.pop("phone_number")
 
         shift_starts_at = validated_data["shift_starts_at"]
         shift_ends_at = validated_data["shift_ends_at"]
         is_active = validated_data.get("is_active", True)
 
-        with transaction.atomic():
-            user = User.objects.create_user(
-                username=username,
-                email=email,
-                password=password,
-                first_name=first_name,
-                last_name=last_name,
-                phone_number=phone_number,
-                role="delivery_agent",
-            )
-            agent = DeliveryAgent.objects.create(
-                user=user,
-                shop=shop,
-                shift_starts_at=shift_starts_at,
-                shift_ends_at=shift_ends_at,
-                is_active=is_active,
-                is_online=False,
-            )
+        try:
+            with transaction.atomic():
+                user = User.objects.create_user(
+                    username=username,
+                    email=email,
+                    password=password,
+                    first_name=first_name,
+                    last_name=last_name,
+                    phone_number=phone_number,
+                    role="delivery_agent",
+                )
+                agent = DeliveryAgent.objects.create(
+                    user=user,
+                    shop=shop,
+                    shift_starts_at=shift_starts_at,
+                    shift_ends_at=shift_ends_at,
+                    is_active=is_active,
+                    is_online=False,
+                )
+        except IntegrityError as exc:
+            err_text = str(exc).lower()
+            if "email" in err_text:
+                raise serializers.ValidationError({
+                    "email": "A user with that email already exists."
+                })
+            if "phone" in err_text:
+                raise serializers.ValidationError({
+                    "phone_number": "A delivery agent with that phone number already exists."
+                })
+            if "username" in err_text:
+                raise serializers.ValidationError({
+                    "username": "A user with that username already exists."
+                })
+            raise
         return agent
 
 
@@ -211,9 +264,8 @@ class ShopAdminDeliveryAgentUpdateSerializer(serializers.ModelSerializer):
         trim_whitespace=True,
     )
     phone_number = serializers.CharField(
-        max_length=15,
+        max_length=16,
         required=False,
-        allow_blank=True,
         trim_whitespace=True,
     )
 
@@ -226,6 +278,9 @@ class ShopAdminDeliveryAgentUpdateSerializer(serializers.ModelSerializer):
         "user_id",
         "username",
         "email",
+        "agent_id",
+        "phone_verified",
+        "email_verified",
     }
 
     class Meta:
@@ -237,6 +292,37 @@ class ShopAdminDeliveryAgentUpdateSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "phone_number",
+        )
+
+    def validate_phone_number(self, value):
+        try:
+            phone_number = normalize_phone_number(value)
+        except DjangoValidationError as error:
+            raise serializers.ValidationError(error.messages) from error
+
+        existing_agents = User.objects.filter(
+            role="delivery_agent",
+            phone_number=phone_number,
+        )
+        if self.instance is not None:
+            existing_agents = existing_agents.exclude(pk=self.instance.user_id)
+        if existing_agents.exists():
+            raise serializers.ValidationError(
+                "A delivery agent with that phone number already exists."
+            )
+
+        return phone_number
+
+    @staticmethod
+    def _is_delivery_agent_phone_conflict(error):
+        cause = getattr(error, "__cause__", None)
+        diagnostics = getattr(cause, "diag", None)
+        constraint_name = getattr(diagnostics, "constraint_name", "")
+        error_text = str(error).lower()
+        return (
+            constraint_name == "users_delivery_agent_phone_unique"
+            or "users_delivery_agent_phone_unique" in error_text
+            or ("phone_number" in error_text and "unique" in error_text)
         )
 
     def validate(self, attrs):
@@ -265,22 +351,29 @@ class ShopAdminDeliveryAgentUpdateSerializer(serializers.ModelSerializer):
                 setattr(user, field, validated_data.pop(field))
                 user_modified = True
 
-        with transaction.atomic():
-            if user_modified:
-                user.save()
+        try:
+            with transaction.atomic():
+                if user_modified:
+                    user.save()
 
-            if "is_active" in validated_data:
-                instance.is_active = validated_data["is_active"]
-                if not instance.is_active:
-                    instance.is_online = False
+                if "is_active" in validated_data:
+                    instance.is_active = validated_data["is_active"]
+                    if not instance.is_active:
+                        instance.is_online = False
 
-            if "shift_starts_at" in validated_data:
-                instance.shift_starts_at = validated_data["shift_starts_at"]
+                if "shift_starts_at" in validated_data:
+                    instance.shift_starts_at = validated_data["shift_starts_at"]
 
-            if "shift_ends_at" in validated_data:
-                instance.shift_ends_at = validated_data["shift_ends_at"]
+                if "shift_ends_at" in validated_data:
+                    instance.shift_ends_at = validated_data["shift_ends_at"]
 
-            instance.save()
+                instance.save()
+        except IntegrityError as error:
+            if not self._is_delivery_agent_phone_conflict(error):
+                raise
+            raise serializers.ValidationError({
+                "phone_number": "A delivery agent with that phone number already exists."
+            }) from error
 
         return instance
 
@@ -329,6 +422,7 @@ class ShopAdminDeliveryTaskAgentSerializer(serializers.ModelSerializer):
         model = DeliveryAgent
         fields = (
             "id",
+            "agent_id",
             "username",
             "first_name",
             "last_name",
@@ -361,6 +455,7 @@ class ShopAdminDeliveryTaskSerializer(serializers.ModelSerializer):
             "order_number",
             "task_type",
             "status",
+            "failure_reason",
             "delivery_agent",
             "delivery_agent_id",
             "scheduled_at",
@@ -449,6 +544,7 @@ class ShopAdminDeliveryTaskAssignSerializer(serializers.Serializer):
         agent = self.validated_data["delivery_agent"]
         task.delivery_agent = agent
         task.status = DeliveryTask.STATUS_ASSIGNED
+        task.failure_reason = ""
 
         if "scheduled_at" in self.validated_data and self.validated_data["scheduled_at"] is not None:
             task.scheduled_at = self.validated_data["scheduled_at"]
@@ -492,5 +588,6 @@ class ShopAdminDeliveryTaskUnassignSerializer(serializers.Serializer):
         task = self.context["task"]
         task.delivery_agent = None
         task.status = DeliveryTask.STATUS_UNASSIGNED
+        task.failure_reason = ""
         task.save()
         return task

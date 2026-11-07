@@ -1,18 +1,27 @@
 from datetime import time, timedelta
 from decimal import Decimal
+import re
 import threading
 from unittest.mock import patch
 
-from django.contrib.auth.hashers import check_password
+from django.contrib.auth.hashers import check_password, make_password
+from django.core import mail
 from django.core.exceptions import ValidationError
 from django.db import OperationalError, connections
+from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient, APITestCase, APITransactionTestCase
 
-from logistics.models import DeliveryAgent, DeliveryTask
+from logistics.models import (
+    DeliveryAgent,
+    DeliveryOTPAuditLog,
+    DeliveryTask,
+    DeliveryVerificationOTP,
+)
 from orders.models import Order
 from shops.models import Shop
 from users.models import User
+
 
 
 class ShopAdminDeliveryAgentManagementTests(APITestCase):
@@ -147,7 +156,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
         self.assertEqual(res.data["user"]["email"], "arun@example.com")
         self.assertEqual(res.data["user"]["first_name"], "Arun")
         self.assertEqual(res.data["user"]["last_name"], "Kumar")
-        self.assertEqual(res.data["user"]["phone_number"], "9876543299")
+        self.assertEqual(res.data["user"]["phone_number"], "+919876543299")
         self.assertEqual(res.data["shift_starts_at"], "08:30:00")
         self.assertEqual(res.data["shift_ends_at"], "17:30:00")
         self.assertTrue(res.data["is_active"])
@@ -175,6 +184,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
             "email": "tampered@example.com",
             "password": "SecurePassword123!",
             "role": "platform_admin",  # Tampered role
+            "phone_number": "9876543291",
             "shift_starts_at": "09:00:00",
             "shift_ends_at": "18:00:00",
         }
@@ -195,6 +205,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
             "username": "hashed_pass_agent",
             "email": "hashed@example.com",
             "password": raw_password,
+            "phone_number": "9876543292",
             "shift_starts_at": "09:00:00",
             "shift_ends_at": "18:00:00",
         }
@@ -220,6 +231,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
                 "email": "invalid1@example.com",
                 "password": "StrongPassword123!",
                 "password_confirm": "DifferentPassword123!",
+                "phone_number": "9876543293",
                 "shift_starts_at": "09:00:00",
                 "shift_ends_at": "18:00:00",
             },
@@ -235,6 +247,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
                 "username": "agent_invalid_2",
                 "email": "invalid2@example.com",
                 "password": "123",
+                "phone_number": "9876543294",
                 "shift_starts_at": "09:00:00",
                 "shift_ends_at": "18:00:00",
             },
@@ -250,6 +263,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
                 "username": "agent_invalid_3",
                 "email": "invalid3@example.com",
                 "password": "StrongPassword123!",
+                "phone_number": "9876543295",
                 "shift_starts_at": "09:00:00",
                 "shift_ends_at": "09:00:00",
             },
@@ -269,6 +283,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
                 "username": self.existing_agent_user.username,
                 "email": "different_email@example.com",
                 "password": "StrongPassword123!",
+                "phone_number": "9876543296",
                 "shift_starts_at": "09:00:00",
                 "shift_ends_at": "18:00:00",
             },
@@ -284,6 +299,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
                 "username": "brand_new_agent_username",
                 "email": self.existing_agent_user.email.upper(),
                 "password": "StrongPassword123!",
+                "phone_number": "9876543297",
                 "shift_starts_at": "09:00:00",
                 "shift_ends_at": "18:00:00",
             },
@@ -300,6 +316,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
             "username": "rollback_agent",
             "email": "rollback@example.com",
             "password": "StrongPassword123!",
+            "phone_number": "9876543298",
             "shift_starts_at": "09:00:00",
             "shift_ends_at": "18:00:00",
         }
@@ -321,6 +338,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
             email="shop2_agent@example.com",
             password=self.password,
             role="delivery_agent",
+            phone_number="+919876543220",
         )
         DeliveryAgent.objects.create(
             user=agent_user_2,
@@ -336,6 +354,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
             email="shop1_inactive@example.com",
             password=self.password,
             role="delivery_agent",
+            phone_number="+919876543221",
             first_name="InactiveName",
         )
         DeliveryAgent.objects.create(
@@ -379,6 +398,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
             email="other_shop_agent@example.com",
             password=self.password,
             role="delivery_agent",
+            phone_number="+919876543222",
         )
         agent_2 = DeliveryAgent.objects.create(
             user=agent_user_2,
@@ -413,6 +433,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
             "username": "hijack_shop_agent",
             "email": "hijack@example.com",
             "password": "StrongPassword123!",
+            "phone_number": "9876543299",
             "shop_id": self.shop_2.id,  # Attempting to assign to Shop 2
             "shop": self.shop_2.id,
             "shift_starts_at": "09:00:00",
@@ -567,6 +588,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
             email="online_agent@example.com",
             password=self.password,
             role="delivery_agent",
+            phone_number="+919876543223",
         )
         agent = DeliveryAgent.objects.create(
             user=user,
@@ -660,13 +682,13 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
         self.assertEqual(res.status_code, 200, res.data)
         self.assertEqual(res.data["user"]["first_name"], "UpdatedFirst")
         self.assertEqual(res.data["user"]["last_name"], "UpdatedLast")
-        self.assertEqual(res.data["user"]["phone_number"], "9123456789")
+        self.assertEqual(res.data["user"]["phone_number"], "+919123456789")
 
         # Verify persisted on User model in DB
         self.existing_agent_user.refresh_from_db()
         self.assertEqual(self.existing_agent_user.first_name, "UpdatedFirst")
         self.assertEqual(self.existing_agent_user.last_name, "UpdatedLast")
-        self.assertEqual(self.existing_agent_user.phone_number, "9123456789")
+        self.assertEqual(self.existing_agent_user.phone_number, "+919123456789")
 
     # 18. Fix 4: Valid partial shift-hour update
     def test_shop_admin_valid_partial_shift_hour_update(self):
@@ -873,6 +895,7 @@ class ShopAdminDeliveryTaskManagementTests(APITestCase):
             username="task_agent_inactive",
             email="task_agent_inactive@example.com",
             password=self.password,
+            phone_number="+919876543225",
             role="delivery_agent",
         )
         self.agent_inactive = DeliveryAgent.objects.create(
@@ -889,6 +912,7 @@ class ShopAdminDeliveryTaskManagementTests(APITestCase):
             username="task_agent_user_inactive",
             email="task_agent_user_inact@example.com",
             password=self.password,
+            phone_number="+919876543226",
             role="delivery_agent",
             is_active=False,
         )
@@ -906,6 +930,7 @@ class ShopAdminDeliveryTaskManagementTests(APITestCase):
             username="task_agent_shop2",
             email="task_agent_shop2@example.com",
             password=self.password,
+            phone_number="+919876543227",
             role="delivery_agent",
         )
         self.agent_shop2 = DeliveryAgent.objects.create(
@@ -1236,9 +1261,9 @@ class ShopAdminDeliveryTaskManagementTests(APITestCase):
         self.assertEqual(res.status_code, 400, res.data)
         self.assertIn("delivery_agent_id", res.data)
 
-    # 15. Completed, failed, and cancelled tasks cannot be assigned
+    # 15. Completed and cancelled tasks cannot be assigned
     def test_reject_assignment_on_terminal_tasks_400(self):
-        for term_status in ["completed", "failed", "cancelled"]:
+        for term_status in ["completed", "cancelled"]:
             with self.subTest(status=term_status):
                 order = self.create_order(self.shop_1)
                 task = self.create_task(
@@ -1254,6 +1279,50 @@ class ShopAdminDeliveryTaskManagementTests(APITestCase):
                 )
                 self.assertEqual(res.status_code, 400, res.data)
                 self.assertIn("status", res.data)
+
+    def test_reassign_failed_task_by_shop_admin_succeeds(self):
+        user_2 = User.objects.create_user(
+            username="reassign_agent_2",
+            email="reassign2@example.com",
+            password=self.password,
+            role="delivery_agent",
+            phone_number="+919876543224",
+        )
+        agent_2 = DeliveryAgent.objects.create(
+            user=user_2,
+            shop=self.shop_1,
+            shift_starts_at=time(8),
+            shift_ends_at=time(20),
+            is_active=True,
+            is_online=True,
+        )
+
+        order = self.create_order(self.shop_1, order_status="ready")
+        task = self.create_task(
+            order,
+            task_type="delivery",
+            status="failed",
+            delivery_agent=self.agent_1,
+        )
+        task.failure_reason = "Customer was not home."
+        task.save(update_fields=["failure_reason"])
+
+        self.client.force_authenticate(user=self.shop_admin_1)
+        res = self.client.post(
+            f"/api/shop-admin/delivery-tasks/{task.id}/assign/",
+            {"delivery_agent_id": agent_2.id},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["status"], "assigned")
+        self.assertEqual(res.data["delivery_agent"]["id"], agent_2.id)
+        self.assertEqual(res.data["failure_reason"], "")
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, "assigned")
+        self.assertEqual(task.delivery_agent, agent_2)
+        self.assertEqual(task.failure_reason, "")
+        self.assertEqual(task.order.order_status, "ready")
 
     # 16. Tasks associated with terminal orders cannot be assigned
     def test_reject_assignment_when_order_is_terminal_400(self):
@@ -1609,6 +1678,7 @@ class DeliveryAgentTaskWorkflowTests(APITestCase):
             username="wf_agent_inact",
             email="wf_agent_inact@example.com",
             password=self.password,
+            phone_number="+919876543228",
             role="delivery_agent",
         )
         self.agent_inactive = DeliveryAgent.objects.create(
@@ -1625,6 +1695,7 @@ class DeliveryAgentTaskWorkflowTests(APITestCase):
             username="wf_agent_user_inact",
             email="wf_agent_user_inact@example.com",
             password=self.password,
+            phone_number="+919876543229",
             role="delivery_agent",
             is_active=False,
         )
@@ -1995,7 +2066,29 @@ class DeliveryAgentTaskWorkflowTests(APITestCase):
         task = self.create_task(order, task_type="delivery", status="in_progress", delivery_agent=self.agent_1)
 
         self.client.force_authenticate(user=self.agent_user_1)
-        res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/complete/")
+
+        # 1. Delivery completion without OTP is rejected
+        res_no_otp = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/complete/")
+        self.assertEqual(res_no_otp.status_code, 400, res_no_otp.data)
+        self.assertIn("otp", res_no_otp.data)
+
+        # 2. Request OTP
+        res_req = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/request-otp/")
+        self.assertEqual(res_req.status_code, 200, res_req.data)
+        self.assertIn("expires_at", res_req.data)
+
+        # Extract generated OTP code from outbox or DB record
+        self.assertTrue(len(mail.outbox) > 0)
+        otp_match = re.search(r"\b\d{6}\b", mail.outbox[-1].body)
+        self.assertIsNotNone(otp_match)
+        otp = otp_match.group()
+
+        # 3. Complete delivery with valid OTP
+        res = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+            {"otp": otp},
+            format="json",
+        )
         self.assertEqual(res.status_code, 200, res.data)
         self.assertEqual(res.data["status"], "completed")
         self.assertIsNotNone(res.data["completed_at"])
@@ -2010,6 +2103,7 @@ class DeliveryAgentTaskWorkflowTests(APITestCase):
         # Verify OrderStatusHistory
         history = order.status_history.order_by("created_at")
         self.assertTrue(history.filter(status="delivered").exists())
+
 
     def test_complete_without_starting_rejected_400(self):
         order = self.create_order(self.shop_1, order_status="pickup_scheduled")
@@ -2058,9 +2152,14 @@ class DeliveryAgentTaskWorkflowTests(APITestCase):
         task = self.create_task(order, task_type="delivery", status="in_progress", delivery_agent=self.agent_1)
 
         self.client.force_authenticate(user=self.agent_user_1)
-        res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/complete/")
+        res = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+            {"otp": "123456"},
+            format="json",
+        )
         self.assertEqual(res.status_code, 400, res.data)
         self.assertIn("order_status", res.data)
+
 
     def test_complete_rejects_unexpected_body_payload_400(self):
         order = self.create_order(self.shop_1, order_status="pickup_scheduled")
@@ -2130,6 +2229,7 @@ class DeliveryAgentConcurrencyAndRegressionTests(APITestCase):
             username="conc_agent",
             email="conc_agent@example.com",
             password=self.password,
+            phone_number="+919876543230",
             role="delivery_agent",
         )
         self.agent = DeliveryAgent.objects.create(
@@ -2365,6 +2465,7 @@ class DeliveryAgentPostgresConcurrencyTests(APITransactionTestCase):
             username="pg_conc_agent",
             email="pg_agent@example.com",
             password=self.password,
+            phone_number="+919876543231",
             role="delivery_agent",
         )
         self.agent = DeliveryAgent.objects.create(
@@ -2465,3 +2566,790 @@ class DeliveryAgentPostgresConcurrencyTests(APITransactionTestCase):
             self.assertEqual(order.order_status, "pickup_scheduled")
             self.assertEqual(task.status, "in_progress")
             self.assertEqual(cust_status, 400)
+
+    def test_concurrent_complete_delivery_requests_with_otp_are_serialized(self):
+        order = Order.objects.create(
+            customer=self.customer,
+            shop=self.shop,
+            pickup_address_line="200 Concurrency Road",
+            pickup_city="Kochi",
+            pickup_district="Ernakulam",
+            pickup_state="Kerala",
+            pickup_pincode="682001",
+            total_amount=Decimal("150.00"),
+            order_status="ready",
+        )
+        task = DeliveryTask.objects.filter(order=order, task_type="delivery").first()
+        task.delivery_agent = self.agent
+        task.status = "in_progress"
+        task.save(update_fields=["delivery_agent", "status"])
+
+        raw_otp = "889900"
+        DeliveryVerificationOTP.objects.create(
+            task=task,
+            code_hash=make_password(raw_otp),
+            expires_at=timezone.now() + timedelta(minutes=15),
+        )
+
+        results = {}
+        barrier = threading.Barrier(2)
+
+        def worker_thread(worker_id):
+            try:
+                client = APIClient()
+                client.force_authenticate(user=self.agent_user)
+                barrier.wait(timeout=5)
+                res = client.post(
+                    f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+                    {"otp": raw_otp},
+                    format="json",
+                )
+                results[worker_id] = res.status_code
+                results[f"{worker_id}_data"] = getattr(res, "data", None)
+            except Exception as e:
+                results[f"{worker_id}_error"] = str(e)
+            finally:
+                connections.close_all()
+
+
+        t1 = threading.Thread(target=worker_thread, args=("worker_1",))
+        t2 = threading.Thread(target=worker_thread, args=("worker_2",))
+
+        t1.start()
+        t2.start()
+
+        t1.join(timeout=10)
+        t2.join(timeout=10)
+
+        self.assertNotIn("worker_1_error", results)
+        self.assertNotIn("worker_2_error", results)
+
+        s1 = results.get("worker_1")
+        s2 = results.get("worker_2")
+
+        self.assertNotEqual(s1, 500)
+        self.assertNotEqual(s2, 500)
+
+        statuses = sorted([s1, s2])
+        self.assertEqual(statuses[0], 200, f"Results were: {results}")
+        self.assertIn(statuses[1], [400, 409])
+
+
+        task.refresh_from_db()
+        order.refresh_from_db()
+        self.assertEqual(task.status, "completed")
+        self.assertEqual(order.order_status, "delivered")
+
+
+
+class DeliveryAgentOTPAndFailureWorkflowTests(APITestCase):
+    """
+    Exhaustive tests covering Architecture Decision 26A:
+    - Delivery-only OTP verification lifecycle (15-min validity, 60s resend cooldown,
+      repeated incorrect attempts cooldown, rate limiting, audit logging).
+    - Pickup completion without OTP.
+    - Failure reporting for pickup and delivery tasks.
+    - Concurrency and authorization security checks.
+    """
+
+    def setUp(self):
+        self.password = "StrongPassword123!"
+
+        self.shop_admin = User.objects.create_user(
+            username="otp_test_admin",
+            email="otp_admin@example.com",
+            password=self.password,
+            role="shop_admin",
+        )
+        self.shop = Shop.objects.create(
+            shop_admin=self.shop_admin,
+            shop_name="OTP Testing Cleaners",
+            contact_number="9876543210",
+            address_line="100 OTP Road",
+            city="Kochi",
+            district="Ernakulam",
+            state="Kerala",
+            pincode="682001",
+            opening_time=time(9),
+            closing_time=time(18),
+            is_approved=True,
+        )
+        self.customer = User.objects.create_user(
+            username="otp_customer",
+            email="customer_otp@example.com",
+            first_name="Alice",
+            last_name="Customer",
+            password=self.password,
+            role="customer",
+        )
+        self.agent_user = User.objects.create_user(
+            username="otp_agent",
+            email="agent_otp@example.com",
+            password=self.password,
+            phone_number="+919876543232",
+            role="delivery_agent",
+        )
+        self.agent = DeliveryAgent.objects.create(
+            user=self.agent_user,
+            shop=self.shop,
+            shift_starts_at=time(8),
+            shift_ends_at=time(20),
+            is_active=True,
+            is_online=True,
+        )
+
+        self.other_agent_user = User.objects.create_user(
+            username="otp_other_agent",
+            email="other_agent_otp@example.com",
+            password=self.password,
+            phone_number="+919876543233",
+            role="delivery_agent",
+        )
+        self.other_agent = DeliveryAgent.objects.create(
+            user=self.other_agent_user,
+            shop=self.shop,
+            shift_starts_at=time(8),
+            shift_ends_at=time(20),
+            is_active=True,
+            is_online=True,
+        )
+
+        mail.outbox.clear()
+
+    def create_order(self, order_status="ready"):
+        return Order.objects.create(
+            customer=self.customer,
+            shop=self.shop,
+            pickup_address_line="Flat 4B, Greenwood",
+            pickup_city="Kochi",
+            pickup_district="Ernakulam",
+            pickup_state="Kerala",
+            pickup_pincode="682001",
+            total_amount=Decimal("250.00"),
+            order_status=order_status,
+        )
+
+    def create_task(self, order, task_type="delivery", status="in_progress", agent=None):
+        task = DeliveryTask.objects.filter(order=order, task_type=task_type).first()
+        agent_to_assign = agent or self.agent
+        if not task:
+            return DeliveryTask.objects.create(
+                order=order,
+                delivery_agent=agent_to_assign,
+                task_type=task_type,
+                status=status,
+            )
+        task.status = status
+        task.delivery_agent = agent_to_assign
+        task.save()
+        return task
+
+
+    def test_successful_delivery_flow_with_valid_otp(self):
+        order = self.create_order(order_status="ready")
+        task = self.create_task(order, task_type="delivery", status="in_progress")
+
+        self.client.force_authenticate(user=self.agent_user)
+
+        # 1. Request OTP
+        res_req = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/request-otp/")
+        self.assertEqual(res_req.status_code, 200, res_req.data)
+        self.assertIn("expires_at", res_req.data)
+        self.assertEqual(res_req.data["resend_cooldown_seconds"], 60)
+        self.assertNotIn("otp", res_req.data)
+
+        # Verify email was dispatched
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["customer_otp@example.com"])
+        otp_match = re.search(r"\b\d{6}\b", mail.outbox[0].body)
+        self.assertIsNotNone(otp_match)
+        otp = otp_match.group()
+
+        # 2. Verify Audit log recorded generation
+        audit_log = DeliveryOTPAuditLog.objects.filter(task=task).first()
+        self.assertIsNotNone(audit_log)
+        self.assertEqual(audit_log.action, DeliveryOTPAuditLog.ACTION_GENERATED)
+        self.assertEqual(audit_log.delivery_agent, self.agent)
+
+        # 3. Complete task with valid OTP
+        res_comp = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+            {"otp": otp},
+            format="json",
+        )
+        self.assertEqual(res_comp.status_code, 200, res_comp.data)
+        self.assertEqual(res_comp.data["status"], "completed")
+
+        task.refresh_from_db()
+        order.refresh_from_db()
+        self.assertEqual(task.status, "completed")
+        self.assertIsNotNone(task.completed_at)
+        self.assertEqual(order.order_status, "delivered")
+
+        # 4. Verify OTP record marked verified
+        otp_record = DeliveryVerificationOTP.objects.filter(task=task).first()
+        self.assertIsNotNone(otp_record.verified_at)
+
+        # 5. Verify audit log recorded verification
+        latest_audit = DeliveryOTPAuditLog.objects.filter(task=task).first()
+        self.assertEqual(latest_audit.action, DeliveryOTPAuditLog.ACTION_VERIFIED)
+
+    def test_delivery_completion_missing_otp_rejected_400(self):
+        order = self.create_order(order_status="ready")
+        task = self.create_task(order, task_type="delivery", status="in_progress")
+
+        self.client.force_authenticate(user=self.agent_user)
+        self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/request-otp/")
+
+        res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/complete/", {})
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("otp", res.data)
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, "in_progress")
+
+    def test_delivery_completion_without_any_otp_issued_rejected_400(self):
+        order = self.create_order(order_status="ready")
+        task = self.create_task(order, task_type="delivery", status="in_progress")
+
+        self.client.force_authenticate(user=self.agent_user)
+        res = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+            {"otp": "123456"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("otp", res.data)
+        self.assertIn("No active OTP found", str(res.data["otp"]))
+
+    def test_delivery_completion_incorrect_otp_rejected_400(self):
+        order = self.create_order(order_status="ready")
+        task = self.create_task(order, task_type="delivery", status="in_progress")
+
+        self.client.force_authenticate(user=self.agent_user)
+        self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/request-otp/")
+
+        res = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+            {"otp": "000000"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("otp", res.data)
+        self.assertIn("Invalid OTP", str(res.data["otp"]))
+
+        otp_record = DeliveryVerificationOTP.objects.get(task=task)
+        self.assertEqual(otp_record.consecutive_failed_attempts, 1)
+
+        failed_audit = DeliveryOTPAuditLog.objects.filter(
+            task=task,
+            action=DeliveryOTPAuditLog.ACTION_FAILED_ATTEMPT,
+        ).first()
+        self.assertIsNotNone(failed_audit)
+
+    def test_delivery_completion_expired_otp_rejected_400(self):
+        order = self.create_order(order_status="ready")
+        task = self.create_task(order, task_type="delivery", status="in_progress")
+
+        past_time = timezone.now() - timedelta(minutes=16)
+        DeliveryVerificationOTP.objects.create(
+            task=task,
+            code_hash=make_password("654321"),
+            expires_at=past_time,
+        )
+
+        self.client.force_authenticate(user=self.agent_user)
+        res = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+            {"otp": "654321"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400, res.data)
+        self.assertIn("otp", res.data)
+        self.assertIn("expired", str(res.data["otp"]).lower())
+
+    def test_resend_cooldown_60_seconds_enforced_429(self):
+        order = self.create_order(order_status="ready")
+        task = self.create_task(order, task_type="delivery", status="in_progress")
+
+        self.client.force_authenticate(user=self.agent_user)
+
+        res_1 = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/request-otp/")
+        self.assertEqual(res_1.status_code, 200)
+
+        res_2 = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/request-otp/")
+        self.assertEqual(res_2.status_code, 429, res_2.data)
+        self.assertIn("Please wait", res_2.data["detail"])
+
+    def test_resend_after_cooldown_invalidates_previous_otp(self):
+        order = self.create_order(order_status="ready")
+        task = self.create_task(order, task_type="delivery", status="in_progress")
+
+        self.client.force_authenticate(user=self.agent_user)
+        self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/request-otp/")
+        otp_1 = re.search(r"\b\d{6}\b", mail.outbox[-1].body).group()
+
+        initial_otp = DeliveryVerificationOTP.objects.get(task=task)
+        initial_otp.created_at = timezone.now() - timedelta(seconds=65)
+        initial_otp.save(update_fields=["created_at"])
+
+        res_2 = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/request-otp/")
+        self.assertEqual(res_2.status_code, 200)
+        otp_2 = re.search(r"\b\d{6}\b", mail.outbox[-1].body).group()
+
+        initial_otp.refresh_from_db()
+        self.assertIsNotNone(initial_otp.invalidated_at)
+
+        res_old = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+            {"otp": otp_1},
+            format="json",
+        )
+        self.assertEqual(res_old.status_code, 400)
+
+        res_new = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+            {"otp": otp_2},
+            format="json",
+        )
+        self.assertEqual(res_new.status_code, 200)
+        self.assertEqual(res_new.data["status"], "completed")
+
+    def test_repeated_incorrect_attempts_cooldown_and_recovery(self):
+        order = self.create_order(order_status="ready")
+        task = self.create_task(order, task_type="delivery", status="in_progress")
+
+        self.client.force_authenticate(user=self.agent_user)
+        self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/request-otp/")
+        valid_otp = re.search(r"\b\d{6}\b", mail.outbox[-1].body).group()
+
+        # Attempts 1 through 4: rejected with 400 (under threshold of 5)
+        for i in range(1, 5):
+            res = self.client.post(
+                f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+                {"otp": f"00000{i}"},
+                format="json",
+            )
+            self.assertEqual(res.status_code, 400)
+            self.assertIn("Invalid OTP", str(res.data))
+
+        # Attempt 5: triggers 60s cooldown (429)
+        res5 = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+            {"otp": "000005"},
+            format="json",
+        )
+        self.assertEqual(res5.status_code, 429)
+        self.assertIn("Cooldown activated", res5.data["detail"])
+
+        otp_record = DeliveryVerificationOTP.objects.get(task=task)
+        self.assertIsNotNone(otp_record.cooldown_until)
+
+        # Attempt 6 during active cooldown is blocked with 429 even with valid OTP
+        res6 = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+            {"otp": valid_otp},
+            format="json",
+        )
+        self.assertEqual(res6.status_code, 429)
+
+        # Simulate expiration of cooldown
+        otp_record.cooldown_until = timezone.now() - timedelta(seconds=1)
+        otp_record.save(update_fields=["cooldown_until"])
+
+        # Attempt 7 after cooldown recovery succeeds with valid OTP
+        res7 = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+            {"otp": valid_otp},
+            format="json",
+        )
+        self.assertEqual(res7.status_code, 200, res7.data)
+        self.assertEqual(res7.data["status"], "completed")
+
+    def test_threshold_of_5_consecutive_failures_exact(self):
+        order = self.create_order(order_status="ready")
+        task = self.create_task(order, task_type="delivery", status="in_progress")
+
+        self.client.force_authenticate(user=self.agent_user)
+        self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/request-otp/")
+
+        otp_record = DeliveryVerificationOTP.objects.get(task=task)
+
+        # Attempts 1 through 4: consecutive count increases, cooldown_until is None, HTTP 400
+        for attempt_num in range(1, 5):
+            res = self.client.post(
+                f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+                {"otp": f"11111{attempt_num}"},
+                format="json",
+            )
+            self.assertEqual(res.status_code, 400)
+            otp_record.refresh_from_db()
+            self.assertEqual(otp_record.consecutive_failed_attempts, attempt_num)
+            self.assertIsNone(otp_record.cooldown_until)
+
+        # Attempt 5: exactly triggers cooldown, HTTP 429
+        res5 = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+            {"otp": "111115"},
+            format="json",
+        )
+        self.assertEqual(res5.status_code, 429)
+        otp_record.refresh_from_db()
+        self.assertEqual(otp_record.consecutive_failed_attempts, 5)
+        self.assertIsNotNone(otp_record.cooldown_until)
+
+        # Attempt 6: still in cooldown, HTTP 429
+        res6 = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+            {"otp": "111116"},
+            format="json",
+        )
+        self.assertEqual(res6.status_code, 429)
+
+    def test_successful_verification_resets_failed_attempts_counter(self):
+        order = self.create_order(order_status="ready")
+        task = self.create_task(order, task_type="delivery", status="in_progress")
+
+        self.client.force_authenticate(user=self.agent_user)
+        self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/request-otp/")
+        valid_otp = re.search(r"\b\d{6}\b", mail.outbox[-1].body).group()
+
+        # 4 incorrect attempts (one below threshold of 5)
+        for i in range(1, 5):
+            res = self.client.post(
+                f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+                {"otp": f"00000{i}"},
+                format="json",
+            )
+            self.assertEqual(res.status_code, 400)
+
+        otp_record = DeliveryVerificationOTP.objects.get(task=task)
+        self.assertEqual(otp_record.consecutive_failed_attempts, 4)
+        self.assertIsNone(otp_record.cooldown_until)
+
+        # 5th attempt is valid OTP: completes successfully and resets counter
+        res_valid = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+            {"otp": valid_otp},
+            format="json",
+        )
+        self.assertEqual(res_valid.status_code, 200)
+
+        otp_record.refresh_from_db()
+        self.assertIsNotNone(otp_record.verified_at)
+        self.assertEqual(otp_record.consecutive_failed_attempts, 0)
+        self.assertIsNone(otp_record.cooldown_until)
+
+    @override_settings(DELIVERY_OTP_INCORRECT_ATTEMPTS_THRESHOLD=2)
+    def test_configurable_threshold_via_settings(self):
+        order = self.create_order(order_status="ready")
+        task = self.create_task(order, task_type="delivery", status="in_progress")
+
+        self.client.force_authenticate(user=self.agent_user)
+        self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/request-otp/")
+
+        # Attempt 1: 400
+        res1 = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+            {"otp": "000001"},
+            format="json",
+        )
+        self.assertEqual(res1.status_code, 400)
+
+        # Attempt 2: 429 (triggers cooldown at overridden threshold 2)
+        res2 = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+            {"otp": "000002"},
+            format="json",
+        )
+        self.assertEqual(res2.status_code, 429)
+        self.assertIn("Cooldown activated", res2.data["detail"])
+
+    def test_replaying_consumed_otp_rejected(self):
+        order = self.create_order(order_status="ready")
+        task = self.create_task(order, task_type="delivery", status="in_progress")
+
+        self.client.force_authenticate(user=self.agent_user)
+        self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/request-otp/")
+        otp = re.search(r"\b\d{6}\b", mail.outbox[-1].body).group()
+
+        res1 = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/complete/", {"otp": otp}, format="json")
+        self.assertEqual(res1.status_code, 200)
+
+        # Replay attempt fails because task is already completed
+        res2 = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/complete/", {"otp": otp}, format="json")
+        self.assertEqual(res2.status_code, 400)
+        self.assertIn("status", res2.data)
+
+    def test_pickup_completion_without_otp_succeeds_and_rejects_otp_payload(self):
+        order = self.create_order(order_status="pickup_scheduled")
+        task = self.create_task(order, task_type="pickup", status="in_progress")
+
+        self.client.force_authenticate(user=self.agent_user)
+
+        res_with_otp = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+            {"otp": "123456"},
+            format="json",
+        )
+        self.assertEqual(res_with_otp.status_code, 400)
+        self.assertIn("otp", res_with_otp.data)
+
+        res_pickup = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/complete/")
+        self.assertEqual(res_pickup.status_code, 200, res_pickup.data)
+        self.assertEqual(res_pickup.data["status"], "completed")
+
+        order.refresh_from_db()
+        self.assertEqual(order.order_status, "picked_up")
+
+    def test_request_otp_on_pickup_task_rejected_400(self):
+        order = self.create_order(order_status="pickup_scheduled")
+        task = self.create_task(order, task_type="pickup", status="in_progress")
+
+        self.client.force_authenticate(user=self.agent_user)
+        res = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/request-otp/")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("task_type", res.data)
+
+    def test_unauthorized_agent_cannot_access_or_complete_other_agent_task_404(self):
+        order = self.create_order(order_status="ready")
+        task = self.create_task(order, task_type="delivery", status="in_progress", agent=self.agent)
+
+        self.client.force_authenticate(user=self.other_agent_user)
+        res_req = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/request-otp/")
+        self.assertEqual(res_req.status_code, 404)
+
+        res_comp = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+            {"otp": "123456"},
+            format="json",
+        )
+        self.assertEqual(res_comp.status_code, 404)
+
+        res_fail = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/fail/",
+            {"reason": "Attempting fail"},
+            format="json",
+        )
+        self.assertEqual(res_fail.status_code, 404)
+
+    def test_fail_action_on_pickup_task(self):
+        order = self.create_order(order_status="pickup_scheduled")
+        task = self.create_task(order, task_type="pickup", status="in_progress")
+
+        self.client.force_authenticate(user=self.agent_user)
+        reason_text = "Customer address not found and customer phone unreachable."
+        res = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/fail/",
+            {"reason": reason_text},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["status"], "failed")
+        self.assertEqual(res.data["failure_reason"], reason_text)
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, "failed")
+        self.assertEqual(task.failure_reason, reason_text)
+        self.assertIsNone(task.completed_at)
+
+        order.refresh_from_db()
+        self.assertEqual(order.order_status, "pickup_scheduled")
+
+    def test_fail_action_on_delivery_task_invalidates_otp(self):
+        order = self.create_order(order_status="ready")
+        task = self.create_task(order, task_type="delivery", status="in_progress")
+
+        self.client.force_authenticate(user=self.agent_user)
+        self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/request-otp/")
+
+        reason_text = "Customer refused delivery due to torn packaging."
+        res = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/fail/",
+            {"reason": reason_text},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["status"], "failed")
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, "failed")
+        self.assertEqual(task.failure_reason, reason_text)
+
+        otp_record = DeliveryVerificationOTP.objects.get(task=task)
+        self.assertIsNotNone(otp_record.invalidated_at)
+
+        order.refresh_from_db()
+        self.assertEqual(order.order_status, "ready")
+
+    def test_fail_action_requires_non_empty_reason(self):
+        order = self.create_order(order_status="ready")
+        task = self.create_task(order, task_type="delivery", status="in_progress")
+
+        self.client.force_authenticate(user=self.agent_user)
+        res = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/fail/",
+            {"reason": "   "},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("reason", res.data)
+
+    def test_fail_action_rejected_on_terminal_task(self):
+        order = self.create_order(order_status="delivered")
+        task = self.create_task(order, task_type="delivery", status="completed")
+
+        self.client.force_authenticate(user=self.agent_user)
+        res = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/fail/",
+            {"reason": "Too late"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("status", res.data)
+
+    def test_request_otp_blocked_while_attempt_cooldown_is_active_429(self):
+        order = self.create_order(order_status="ready")
+        task = self.create_task(order, task_type="delivery", status="in_progress")
+
+        self.client.force_authenticate(user=self.agent_user)
+        self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/request-otp/")
+
+        # Fail 5 attempts to trigger attempt cooldown
+        for i in range(5):
+            self.client.post(
+                f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+                {"otp": f"00000{i}"},
+                format="json",
+            )
+
+        active_otp = DeliveryVerificationOTP.objects.get(task=task)
+        self.assertIsNotNone(active_otp.cooldown_until)
+
+        # Advance created_at past 60s so resend cooldown would normally be clear,
+        # but keep cooldown_until active in the future
+        active_otp.created_at = timezone.now() - timedelta(seconds=70)
+        active_otp.cooldown_until = timezone.now() + timedelta(seconds=45)
+        active_otp.save(update_fields=["created_at", "cooldown_until"])
+
+        # Request OTP should be blocked because attempt cooldown is active
+        res_blocked = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/request-otp/")
+        self.assertEqual(res_blocked.status_code, 429)
+        self.assertIn("wait", res_blocked.data["detail"].lower())
+
+    def test_recovery_after_cooldown_provides_fresh_attempt_cycle(self):
+        order = self.create_order(order_status="ready")
+        task = self.create_task(order, task_type="delivery", status="in_progress")
+
+        self.client.force_authenticate(user=self.agent_user)
+        self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/request-otp/")
+
+        # Fail 5 attempts to trigger cooldown
+        for i in range(5):
+            self.client.post(
+                f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+                {"otp": f"00000{i}"},
+                format="json",
+            )
+
+        otp_record = DeliveryVerificationOTP.objects.get(task=task)
+        self.assertIsNotNone(otp_record.cooldown_until)
+
+        # Advance time past cooldown
+        otp_record.cooldown_until = timezone.now() - timedelta(seconds=1)
+        otp_record.save(update_fields=["cooldown_until"])
+
+        # Attempts 1 through 4 of new cycle return 400 (fresh cycle granted)
+        for attempt in range(1, 5):
+            res_after = self.client.post(
+                f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+                {"otp": f"99999{attempt}"},
+                format="json",
+            )
+            self.assertEqual(res_after.status_code, 400)
+            self.assertIn("Invalid OTP", str(res_after.data["otp"]))
+            otp_record.refresh_from_db()
+            self.assertEqual(otp_record.consecutive_failed_attempts, attempt)
+            self.assertIsNone(otp_record.cooldown_until)
+
+        # Attempt 5 of new cycle triggers cooldown again (429)
+        res_5th = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+            {"otp": "999995"},
+            format="json",
+        )
+        self.assertEqual(res_5th.status_code, 429)
+        otp_record.refresh_from_db()
+        self.assertEqual(otp_record.consecutive_failed_attempts, 5)
+        self.assertIsNotNone(otp_record.cooldown_until)
+
+    def test_end_to_end_fail_and_reassign_workflow(self):
+        # 1. Order is ready and assigned to agent 1
+        order = self.create_order(order_status="ready")
+        task = self.create_task(
+            order,
+            task_type="delivery",
+            status="assigned",
+            agent=self.agent,
+        )
+
+        # 2. Agent 1 starts task
+        self.client.force_authenticate(user=self.agent_user)
+        res_start = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/")
+        self.assertEqual(res_start.status_code, 200)
+
+        # 3. Agent 1 requests OTP, then reports failure
+        self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/request-otp/")
+        fail_reason = "Customer premises locked and customer unreachable after multiple calls."
+        res_fail = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/fail/",
+            {"reason": fail_reason},
+            format="json",
+        )
+        self.assertEqual(res_fail.status_code, 200)
+        task.refresh_from_db()
+        self.assertEqual(task.status, "failed")
+        self.assertEqual(task.failure_reason, fail_reason)
+
+        # Confirm order remains ready
+        order.refresh_from_db()
+        self.assertEqual(order.order_status, "ready")
+
+        # 4. Shop Admin reassigns the failed task to other_agent
+        self.client.force_authenticate(user=self.shop_admin)
+        res_reassign = self.client.post(
+            f"/api/shop-admin/delivery-tasks/{task.id}/assign/",
+            {"delivery_agent_id": self.other_agent.id},
+            format="json",
+        )
+        self.assertEqual(res_reassign.status_code, 200, res_reassign.data)
+        self.assertEqual(res_reassign.data["status"], "assigned")
+        self.assertEqual(res_reassign.data["delivery_agent"]["id"], self.other_agent.id)
+        self.assertEqual(res_reassign.data["failure_reason"], "")
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, "assigned")
+        self.assertEqual(task.delivery_agent, self.other_agent)
+        self.assertEqual(task.failure_reason, "")
+
+        # 5. Agent 2 starts task, requests new OTP, and completes delivery
+        self.client.force_authenticate(user=self.other_agent_user)
+        res_start_2 = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/start/")
+        self.assertEqual(res_start_2.status_code, 200)
+
+        res_otp_2 = self.client.post(f"/api/delivery-agent/delivery-tasks/{task.id}/request-otp/")
+        self.assertEqual(res_otp_2.status_code, 200)
+        new_otp = re.search(r"\b\d{6}\b", mail.outbox[-1].body).group()
+
+        res_complete_2 = self.client.post(
+            f"/api/delivery-agent/delivery-tasks/{task.id}/complete/",
+            {"otp": new_otp},
+            format="json",
+        )
+        self.assertEqual(res_complete_2.status_code, 200, res_complete_2.data)
+        self.assertEqual(res_complete_2.data["status"], "completed")
+
+        # 6. Final invariant checks: order delivered, single task, no conflicting tasks
+        order.refresh_from_db()
+        self.assertEqual(order.order_status, "delivered")
+        self.assertEqual(DeliveryTask.objects.filter(order=order).count(), 1)

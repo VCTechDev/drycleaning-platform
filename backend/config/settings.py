@@ -184,10 +184,17 @@ DEFAULT_FROM_EMAIL = os.getenv(
 CORS_ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
-        "CORS_ALLOWED_ORIGINS"
+        "CORS_ALLOWED_ORIGINS",
+        "",
     ).split(",")
     if origin.strip()
 ]
+
+# In local development (DEBUG=True), allow Expo web development server origins
+if DEBUG:
+    for _dev_origin in ("http://localhost:8081", "http://127.0.0.1:8081"):
+        if _dev_origin not in CORS_ALLOWED_ORIGINS:
+            CORS_ALLOWED_ORIGINS.append(_dev_origin)
 
 # The public shop-application API uses this token header to protect draft
 # retrieval, updates, and submission. Preserve corsheaders' defaults while
@@ -198,3 +205,55 @@ CORS_ALLOW_HEADERS = [
 ]
 
 CORS_ALLOW_CREDENTIALS = True
+
+# Delivery Agent OTP Verification settings (Architecture Decision 26A)
+DELIVERY_OTP_INCORRECT_ATTEMPTS_THRESHOLD = int(
+    os.getenv("DELIVERY_OTP_INCORRECT_ATTEMPTS_THRESHOLD", "5")
+)
+
+# Delivery Agent OTP Development Console Delivery Fallback (strictly development only; requires DEBUG=True)
+DELIVERY_AGENT_OTP_CONSOLE_FALLBACK = (
+    os.getenv("DELIVERY_AGENT_OTP_CONSOLE_FALLBACK", "False").lower()
+    in ("true", "1", "yes")
+)
+
+# Delivery Agent Login Challenge-ID Secret (Dedicated HMAC secret; min 32 bytes)
+DELIVERY_AGENT_LOGIN_CHALLENGE_ID_SECRET = os.getenv(
+    "DELIVERY_AGENT_LOGIN_CHALLENGE_ID_SECRET",
+    "",
+)
+
+# Delivery-agent login rate-limit key utilities.
+DELIVERY_AGENT_LOGIN_RATE_LIMIT_HMAC_SECRET = os.getenv(
+    "DELIVERY_AGENT_LOGIN_RATE_LIMIT_HMAC_SECRET",
+    "",
+)
+DELIVERY_AGENT_LOGIN_RATE_LIMIT_HMAC_KEY_VERSION = os.getenv(
+    "DELIVERY_AGENT_LOGIN_RATE_LIMIT_HMAC_KEY_VERSION",
+    "",
+)
+DELIVERY_AGENT_LOGIN_RATE_LIMIT_PREVIOUS_HMAC_SECRET = os.getenv(
+    "DELIVERY_AGENT_LOGIN_RATE_LIMIT_PREVIOUS_HMAC_SECRET",
+    "",
+)
+DELIVERY_AGENT_LOGIN_RATE_LIMIT_PREVIOUS_HMAC_KEY_VERSION = os.getenv(
+    "DELIVERY_AGENT_LOGIN_RATE_LIMIT_PREVIOUS_HMAC_KEY_VERSION",
+    "",
+)
+DELIVERY_AGENT_LOGIN_RATE_LIMIT_LOCK_SECRET = os.getenv(
+    "DELIVERY_AGENT_LOGIN_RATE_LIMIT_LOCK_SECRET",
+    "",
+)
+DELIVERY_AGENT_LOGIN_TRUSTED_PROXY_CIDRS = [
+    cidr.strip()
+    for cidr in os.getenv(
+        "DELIVERY_AGENT_LOGIN_TRUSTED_PROXY_CIDRS",
+        "",
+    ).split(",")
+    if cidr.strip()
+]
+
+
+SIMPLE_JWT = {
+    "TOKEN_REFRESH_SERIALIZER": "accounts.serializers.DeliveryAgentTokenRefreshSerializer",
+}

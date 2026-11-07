@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "delivery-agent",
+    "slug": "delivery-agent",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "deliveryagent",
+    "userInterfaceStyle": "light",
+    "android": {
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "output": "server"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#208AEF"
+        }
+      ],
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}

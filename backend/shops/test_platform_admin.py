@@ -70,6 +70,7 @@ class PlatformAdminFoundationTests(APITestCase):
             username="delivery_agent",
             email="delivery@example.com",
             password=self.password,
+            phone_number="+919876544007",
             role="delivery_agent",
         )
         self.shop = Shop.objects.create(

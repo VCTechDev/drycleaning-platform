@@ -21,6 +21,9 @@ class DeliveryAgentAvailabilitySerializer(serializers.Serializer):
         "user_id",
         "username",
         "email",
+        "agent_id",
+        "phone_verified",
+        "email_verified",
     }
 
     def validate(self, attrs):
@@ -111,9 +114,50 @@ class DeliveryAgentTaskSerializer(serializers.ModelSerializer):
             "shop",
             "task_type",
             "status",
+            "failure_reason",
             "scheduled_at",
             "completed_at",
             "created_at",
             "updated_at",
         )
         read_only_fields = fields
+
+
+class DeliveryAgentTaskFailSerializer(serializers.Serializer):
+    """Serializer for delivery agent reporting task failure."""
+
+    reason = serializers.CharField(
+        required=True,
+        allow_blank=False,
+        trim_whitespace=True,
+        max_length=500,
+    )
+
+    def validate_reason(self, value):
+        stripped = value.strip()
+        if not stripped:
+            raise serializers.ValidationError(
+                "A failure reason is required and cannot be blank."
+            )
+        return stripped
+
+
+class DeliveryAgentTaskCompleteSerializer(serializers.Serializer):
+    """Serializer for delivery agent completing task (with optional OTP for delivery)."""
+
+    otp = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        trim_whitespace=True,
+        max_length=10,
+    )
+
+    def validate(self, attrs):
+        if hasattr(self, "initial_data") and isinstance(self.initial_data, dict):
+            unexpected = sorted([k for k in self.initial_data.keys() if k != "otp"])
+            if unexpected:
+                raise serializers.ValidationError({
+                    field: f"Field '{field}' is not permitted in this request."
+                    for field in unexpected
+                })
+        return attrs
