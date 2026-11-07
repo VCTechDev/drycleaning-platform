@@ -1,12 +1,12 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import path,include
+from django.urls import include, path
 
-from rest_framework_simplejwt.views import TokenRefreshView
-from accounts.views import IdentifierTokenObtainPairView
-
-
+from accounts.views import (
+    DeliveryAgentTokenRefreshView,
+    IdentifierTokenObtainPairView,
+)
 
 
 urlpatterns = [
@@ -18,7 +18,7 @@ urlpatterns = [
     ),
     path(
         "api/token/refresh/",
-        TokenRefreshView.as_view(),
+        DeliveryAgentTokenRefreshView.as_view(),
         name="token_refresh",
     ),
     path("api/", include("shops.urls")),

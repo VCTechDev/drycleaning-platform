@@ -3,6 +3,10 @@ from accounts.views import (
     ChangePasswordView,
     CustomerProfileViewSet,
     CustomerRegistrationView,
+    DeliveryAgentEmailVerificationConfirmView,
+    DeliveryAgentEmailVerificationRequestView,
+    DeliveryAgentLoginRequestOTPView,
+    DeliveryAgentLoginVerifyOTPView,
     ForgotPasswordView,
     PlatformAdminProfileViewSet,
     ResetPasswordView,
@@ -64,5 +68,35 @@ urlpatterns = [
         "auth/change-password/",
         ChangePasswordView.as_view(),
         name="change-password",
+    ),
+    path(
+        "auth/delivery-agent/request-otp/",
+        DeliveryAgentLoginRequestOTPView.as_view(),
+        name="delivery-agent-request-otp",
+    ),
+    path(
+        "auth/delivery-agent/verify-otp/",
+        DeliveryAgentLoginVerifyOTPView.as_view(),
+        name="delivery-agent-verify-otp",
+    ),
+    path(
+        "auth/delivery-agent/verify-email/request/",
+        DeliveryAgentEmailVerificationRequestView.as_view(),
+        name="delivery-agent-verify-email-request",
+    ),
+    path(
+        "auth/delivery-agent/verify-email/confirm/",
+        DeliveryAgentEmailVerificationConfirmView.as_view(),
+        name="delivery-agent-verify-email-confirm",
+    ),
+    path(
+        "auth/delivery-agent/email-verification/request/",
+        DeliveryAgentEmailVerificationRequestView.as_view(),
+        name="delivery-agent-email-verification-request",
+    ),
+    path(
+        "auth/delivery-agent/email-verification/confirm/",
+        DeliveryAgentEmailVerificationConfirmView.as_view(),
+        name="delivery-agent-email-verification-confirm",
     ),
 ]

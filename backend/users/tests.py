@@ -69,6 +69,7 @@ class PlatformAdminUsersApiTests(APITestCase):
             username="delivery_agent_user",
             email="delivery-agent@example.com",
             password=password,
+            phone_number="+919876544006",
             role="delivery_agent",
         )
         self.shop = Shop.objects.create(
@@ -226,6 +227,7 @@ class PlatformAdminUsersApiTests(APITestCase):
                 username=f"pagination_agent_{index}",
                 email=f"pagination-agent-{index}@example.com",
                 password="StrongPassword123!",
+                phone_number=f"+919876545{index:04d}",
                 role="delivery_agent",
             )
         self.authenticate(self.platform_admin)

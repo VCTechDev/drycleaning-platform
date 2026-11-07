@@ -89,6 +89,7 @@ class DeliveryAgentAvailabilityView(APIView):
         agent = self.get_agent(request)
         return Response({
             "agent_id": agent.id,
+            "public_agent_id": agent.agent_id,
             "is_active": agent.is_active,
             "is_online": agent.is_online,
             "shift_starts_at": agent.shift_starts_at,
@@ -108,6 +109,7 @@ class DeliveryAgentAvailabilityView(APIView):
         agent = serializer.save()
         return Response({
             "agent_id": agent.id,
+            "public_agent_id": agent.agent_id,
             "is_active": agent.is_active,
             "is_online": agent.is_online,
         })

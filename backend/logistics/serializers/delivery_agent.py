@@ -21,6 +21,9 @@ class DeliveryAgentAvailabilitySerializer(serializers.Serializer):
         "user_id",
         "username",
         "email",
+        "agent_id",
+        "phone_verified",
+        "email_verified",
     }
 
     def validate(self, attrs):

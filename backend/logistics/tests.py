@@ -156,7 +156,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
         self.assertEqual(res.data["user"]["email"], "arun@example.com")
         self.assertEqual(res.data["user"]["first_name"], "Arun")
         self.assertEqual(res.data["user"]["last_name"], "Kumar")
-        self.assertEqual(res.data["user"]["phone_number"], "9876543299")
+        self.assertEqual(res.data["user"]["phone_number"], "+919876543299")
         self.assertEqual(res.data["shift_starts_at"], "08:30:00")
         self.assertEqual(res.data["shift_ends_at"], "17:30:00")
         self.assertTrue(res.data["is_active"])
@@ -184,6 +184,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
             "email": "tampered@example.com",
             "password": "SecurePassword123!",
             "role": "platform_admin",  # Tampered role
+            "phone_number": "9876543291",
             "shift_starts_at": "09:00:00",
             "shift_ends_at": "18:00:00",
         }
@@ -204,6 +205,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
             "username": "hashed_pass_agent",
             "email": "hashed@example.com",
             "password": raw_password,
+            "phone_number": "9876543292",
             "shift_starts_at": "09:00:00",
             "shift_ends_at": "18:00:00",
         }
@@ -229,6 +231,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
                 "email": "invalid1@example.com",
                 "password": "StrongPassword123!",
                 "password_confirm": "DifferentPassword123!",
+                "phone_number": "9876543293",
                 "shift_starts_at": "09:00:00",
                 "shift_ends_at": "18:00:00",
             },
@@ -244,6 +247,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
                 "username": "agent_invalid_2",
                 "email": "invalid2@example.com",
                 "password": "123",
+                "phone_number": "9876543294",
                 "shift_starts_at": "09:00:00",
                 "shift_ends_at": "18:00:00",
             },
@@ -259,6 +263,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
                 "username": "agent_invalid_3",
                 "email": "invalid3@example.com",
                 "password": "StrongPassword123!",
+                "phone_number": "9876543295",
                 "shift_starts_at": "09:00:00",
                 "shift_ends_at": "09:00:00",
             },
@@ -278,6 +283,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
                 "username": self.existing_agent_user.username,
                 "email": "different_email@example.com",
                 "password": "StrongPassword123!",
+                "phone_number": "9876543296",
                 "shift_starts_at": "09:00:00",
                 "shift_ends_at": "18:00:00",
             },
@@ -293,6 +299,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
                 "username": "brand_new_agent_username",
                 "email": self.existing_agent_user.email.upper(),
                 "password": "StrongPassword123!",
+                "phone_number": "9876543297",
                 "shift_starts_at": "09:00:00",
                 "shift_ends_at": "18:00:00",
             },
@@ -309,6 +316,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
             "username": "rollback_agent",
             "email": "rollback@example.com",
             "password": "StrongPassword123!",
+            "phone_number": "9876543298",
             "shift_starts_at": "09:00:00",
             "shift_ends_at": "18:00:00",
         }
@@ -330,6 +338,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
             email="shop2_agent@example.com",
             password=self.password,
             role="delivery_agent",
+            phone_number="+919876543220",
         )
         DeliveryAgent.objects.create(
             user=agent_user_2,
@@ -345,6 +354,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
             email="shop1_inactive@example.com",
             password=self.password,
             role="delivery_agent",
+            phone_number="+919876543221",
             first_name="InactiveName",
         )
         DeliveryAgent.objects.create(
@@ -388,6 +398,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
             email="other_shop_agent@example.com",
             password=self.password,
             role="delivery_agent",
+            phone_number="+919876543222",
         )
         agent_2 = DeliveryAgent.objects.create(
             user=agent_user_2,
@@ -422,6 +433,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
             "username": "hijack_shop_agent",
             "email": "hijack@example.com",
             "password": "StrongPassword123!",
+            "phone_number": "9876543299",
             "shop_id": self.shop_2.id,  # Attempting to assign to Shop 2
             "shop": self.shop_2.id,
             "shift_starts_at": "09:00:00",
@@ -576,6 +588,7 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
             email="online_agent@example.com",
             password=self.password,
             role="delivery_agent",
+            phone_number="+919876543223",
         )
         agent = DeliveryAgent.objects.create(
             user=user,
@@ -669,13 +682,13 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
         self.assertEqual(res.status_code, 200, res.data)
         self.assertEqual(res.data["user"]["first_name"], "UpdatedFirst")
         self.assertEqual(res.data["user"]["last_name"], "UpdatedLast")
-        self.assertEqual(res.data["user"]["phone_number"], "9123456789")
+        self.assertEqual(res.data["user"]["phone_number"], "+919123456789")
 
         # Verify persisted on User model in DB
         self.existing_agent_user.refresh_from_db()
         self.assertEqual(self.existing_agent_user.first_name, "UpdatedFirst")
         self.assertEqual(self.existing_agent_user.last_name, "UpdatedLast")
-        self.assertEqual(self.existing_agent_user.phone_number, "9123456789")
+        self.assertEqual(self.existing_agent_user.phone_number, "+919123456789")
 
     # 18. Fix 4: Valid partial shift-hour update
     def test_shop_admin_valid_partial_shift_hour_update(self):
@@ -882,6 +895,7 @@ class ShopAdminDeliveryTaskManagementTests(APITestCase):
             username="task_agent_inactive",
             email="task_agent_inactive@example.com",
             password=self.password,
+            phone_number="+919876543225",
             role="delivery_agent",
         )
         self.agent_inactive = DeliveryAgent.objects.create(
@@ -898,6 +912,7 @@ class ShopAdminDeliveryTaskManagementTests(APITestCase):
             username="task_agent_user_inactive",
             email="task_agent_user_inact@example.com",
             password=self.password,
+            phone_number="+919876543226",
             role="delivery_agent",
             is_active=False,
         )
@@ -915,6 +930,7 @@ class ShopAdminDeliveryTaskManagementTests(APITestCase):
             username="task_agent_shop2",
             email="task_agent_shop2@example.com",
             password=self.password,
+            phone_number="+919876543227",
             role="delivery_agent",
         )
         self.agent_shop2 = DeliveryAgent.objects.create(
@@ -1270,6 +1286,7 @@ class ShopAdminDeliveryTaskManagementTests(APITestCase):
             email="reassign2@example.com",
             password=self.password,
             role="delivery_agent",
+            phone_number="+919876543224",
         )
         agent_2 = DeliveryAgent.objects.create(
             user=user_2,
@@ -1661,6 +1678,7 @@ class DeliveryAgentTaskWorkflowTests(APITestCase):
             username="wf_agent_inact",
             email="wf_agent_inact@example.com",
             password=self.password,
+            phone_number="+919876543228",
             role="delivery_agent",
         )
         self.agent_inactive = DeliveryAgent.objects.create(
@@ -1677,6 +1695,7 @@ class DeliveryAgentTaskWorkflowTests(APITestCase):
             username="wf_agent_user_inact",
             email="wf_agent_user_inact@example.com",
             password=self.password,
+            phone_number="+919876543229",
             role="delivery_agent",
             is_active=False,
         )
@@ -2210,6 +2229,7 @@ class DeliveryAgentConcurrencyAndRegressionTests(APITestCase):
             username="conc_agent",
             email="conc_agent@example.com",
             password=self.password,
+            phone_number="+919876543230",
             role="delivery_agent",
         )
         self.agent = DeliveryAgent.objects.create(
@@ -2445,6 +2465,7 @@ class DeliveryAgentPostgresConcurrencyTests(APITransactionTestCase):
             username="pg_conc_agent",
             email="pg_agent@example.com",
             password=self.password,
+            phone_number="+919876543231",
             role="delivery_agent",
         )
         self.agent = DeliveryAgent.objects.create(
@@ -2665,6 +2686,7 @@ class DeliveryAgentOTPAndFailureWorkflowTests(APITestCase):
             username="otp_agent",
             email="agent_otp@example.com",
             password=self.password,
+            phone_number="+919876543232",
             role="delivery_agent",
         )
         self.agent = DeliveryAgent.objects.create(
@@ -2680,6 +2702,7 @@ class DeliveryAgentOTPAndFailureWorkflowTests(APITestCase):
             username="otp_other_agent",
             email="other_agent_otp@example.com",
             password=self.password,
+            phone_number="+919876543233",
             role="delivery_agent",
         )
         self.other_agent = DeliveryAgent.objects.create(

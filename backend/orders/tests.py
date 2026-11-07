@@ -37,6 +37,7 @@ class PlatformAdminOrderAnalyticsTests(APITestCase):
             username="order_delivery_agent",
             email="order-delivery@example.com",
             password=password,
+            phone_number="+919876544000",
             role="delivery_agent",
         )
         self.shop = self.create_shop(
@@ -920,6 +921,7 @@ class CustomerOrderCancellationTests(APITestCase):
             username="pickup_agent_cancel",
             email="agent-cancel@example.com",
             password=self.password,
+            phone_number="+919876544001",
             role="delivery_agent",
         )
         agent = DeliveryAgent.objects.create(
@@ -953,6 +955,7 @@ class CustomerOrderCancellationTests(APITestCase):
             username="inprogress_pickup_agent",
             email="agent-inprogress@example.com",
             password=self.password,
+            phone_number="+919876544002",
             role="delivery_agent",
         )
         agent = DeliveryAgent.objects.create(
@@ -984,6 +987,7 @@ class CustomerOrderCancellationTests(APITestCase):
             username="completed_pickup_agent",
             email="agent-completed@example.com",
             password=self.password,
+            phone_number="+919876544005",
             role="delivery_agent",
         )
         agent = DeliveryAgent.objects.create(
@@ -1045,12 +1049,14 @@ class DeliveryTaskCancellationInvariantTests(APITestCase):
             username="inv_agent_1",
             email="inv-agent1@example.com",
             password=password,
+            phone_number="+919876544003",
             role="delivery_agent",
         )
         self.agent_user_2 = User.objects.create_user(
             username="inv_agent_2",
             email="inv-agent2@example.com",
             password=password,
+            phone_number="+919876544004",
             role="delivery_agent",
         )
         self.shop = Shop.objects.create(
