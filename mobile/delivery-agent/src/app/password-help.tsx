@@ -22,21 +22,42 @@ export default function PasswordHelpScreen() {
           </View>
           <Text style={styles.title}>Need help signing in?</Text>
           <Text style={styles.description}>
-            Password resets are handled by your Shop Administrator. We do not offer an
-            automated reset service from this app.
+            VeeCleen delivery agents authenticate using secure one-time passwords (OTP)
+            sent to their registered email address. Passwords are not used.
           </Text>
 
           <View style={styles.infoCard}>
-            <Text style={styles.infoTitle}>What to do</Text>
+            <Text style={styles.infoTitle}>Common solutions</Text>
             <View style={styles.stepRow}>
               <Text style={styles.stepNumber}>1</Text>
-              <Text style={styles.stepText}>Contact your Shop Administrator.</Text>
+              <Text style={styles.stepText}>
+                <Text style={styles.stepBold}>First-time login: </Text>
+                Verify your registered email address before signing in for the first time.
+              </Text>
             </View>
             <View style={styles.stepRow}>
               <Text style={styles.stepNumber}>2</Text>
-              <Text style={styles.stepText}>Ask them to update or reset your credentials.</Text>
+              <Text style={styles.stepText}>
+                <Text style={styles.stepBold}>Login codes: </Text>
+                Codes expire in 5 minutes. Check spam if an expected code does not arrive.
+              </Text>
+            </View>
+            <View style={styles.stepRow}>
+              <Text style={styles.stepNumber}>3</Text>
+              <Text style={styles.stepText}>
+                <Text style={styles.stepBold}>Profile updates: </Text>
+                Your Shop Administrator can update your phone number or account status.
+              </Text>
             </View>
           </View>
+
+          <Pressable
+            onPress={() => router.push('/verify-email')}
+            accessibilityRole="button"
+            accessibilityLabel="Verify your email address"
+            style={({ pressed }) => [styles.verifyButton, pressed && styles.verifyButtonPressed]}>
+            <Text style={styles.verifyButtonText}>Verify your email</Text>
+          </Pressable>
 
           <Pressable
             onPress={() => router.back()}
@@ -167,6 +188,30 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     color: '#5B6B84',
+    includeFontPadding: false,
+  },
+  stepBold: {
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  verifyButton: {
+    width: '100%',
+    minHeight: 52,
+    borderRadius: 11,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  verifyButtonPressed: {
+    backgroundColor: '#DBEAFE',
+  },
+  verifyButtonText: {
+    color: '#2563EB',
+    fontSize: 14,
+    fontWeight: '700',
     includeFontPadding: false,
   },
   primaryButton: {

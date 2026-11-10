@@ -538,10 +538,8 @@ def is_delivery_agent_eligible(agent: DeliveryAgent | None) -> bool:
         return False
 
     # In production (or when console fallback is disabled), strictly require
-    # verified phone, verified email, and non-empty email address.
+    # verified email and non-empty email address. Phone verification is deferred for MVP.
     if not is_delivery_agent_otp_console_fallback_active():
-        if not agent.phone_verified:
-            return False
         if not agent.email_verified:
             return False
         if not user.email or not user.email.strip():
@@ -662,15 +660,7 @@ class DeliveryAgentLoginRequestOTPView(APIView):
             )
 
         # 4. Deliver OTP exclusively to agent's verified registered email (or dev console fallback)
-        has_verified_email = bool(
-            agent.user.email
-            and agent.user.email.strip()
-            and agent.email_verified
-        )
-        use_console_fallback = (
-            is_delivery_agent_otp_console_fallback_active()
-            and not has_verified_email
-        )
+        use_console_fallback = is_delivery_agent_otp_console_fallback_active()
 
         try:
             if use_console_fallback:
@@ -993,19 +983,42 @@ class DeliveryAgentEmailVerificationRequestView(APIView):
         # Deliver verification email exclusively to registered email address
         if email_to_send:
             try:
-                sent_count = send_mail(
-                    subject="Verify your VeeCleen Delivery Agent Email",
-                    message=(
-                        f"Your VeeCleen delivery agent email verification code is {raw_otp}. "
-                        "It expires in 10 minutes.\n\n"
-                        "If you did not request this verification code, please contact your administrator."
-                    ),
-                    from_email=None,
-                    recipient_list=[email_to_send],
-                    fail_silently=False,
-                )
-                if sent_count != 1:
-                    raise RuntimeError("Email sending failed.")
+                if is_delivery_agent_otp_console_fallback_active():
+                    console_connection = get_connection(
+                        "django.core.mail.backends.console.EmailBackend"
+                    )
+                    msg = EmailMessage(
+                        subject="Verify your VeeCleen Delivery Agent Email",
+                        body=(
+                            "-----------------------------------------------------------------------\n"
+                            "[DEVELOPMENT ONLY - CONSOLE OTP DELIVERY]\n"
+                            f"Delivery Agent: {agent.agent_id} ({agent.user.phone_number})\n"
+                            f"Your VeeCleen delivery agent email verification code is {raw_otp}. "
+                            "It expires in 10 minutes.\n\n"
+                            "If you did not request this verification code, please contact your administrator.\n"
+                            "-----------------------------------------------------------------------\n"
+                        ),
+                        from_email=None,
+                        to=[email_to_send],
+                        connection=console_connection,
+                    )
+                    sent_count = msg.send(fail_silently=False)
+                    if sent_count != 1:
+                        raise RuntimeError("Console OTP delivery returned zero sent messages.")
+                else:
+                    sent_count = send_mail(
+                        subject="Verify your VeeCleen Delivery Agent Email",
+                        message=(
+                            f"Your VeeCleen delivery agent email verification code is {raw_otp}. "
+                            "It expires in 10 minutes.\n\n"
+                            "If you did not request this verification code, please contact your administrator."
+                        ),
+                        from_email=None,
+                        recipient_list=[email_to_send],
+                        fail_silently=False,
+                    )
+                    if sent_count != 1:
+                        raise RuntimeError("Email sending failed.")
             except Exception:
                 logger.error("Delivery agent email verification delivery failed")
                 record.used_at = timezone.now()

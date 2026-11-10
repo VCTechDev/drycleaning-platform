@@ -21,6 +21,16 @@ export interface RequestOTPResponse {
   expires_in_seconds: number;
 }
 
+export interface RequestEmailVerificationResponse {
+  message: string;
+  resend_cooldown_seconds: number;
+  expires_in_seconds: number;
+}
+
+export interface ConfirmEmailVerificationResponse {
+  message: string;
+}
+
 export interface VerifyOTPResponse {
   refresh: string;
   access: string;
@@ -179,6 +189,81 @@ export async function verifyDeliveryAgentOTP(
   }
 
   return data as VerifyOTPResponse;
+}
+
+/**
+ * Request onboarding email verification code for delivery agent
+ */
+export async function requestDeliveryAgentEmailVerification(
+  identifier: string
+): Promise<RequestEmailVerificationResponse> {
+  const url = `${API_BASE_URL}/auth/delivery-agent/verify-email/request/`;
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ identifier: identifier.trim() }),
+    });
+  } catch {
+    throw new ApiError(
+      'Network connection error. Please check your internet connection.',
+      0
+    );
+  }
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const message = extractErrorMessage(data, response.status);
+    const cooldown = typeof data?.resend_cooldown_seconds === 'number'
+      ? data.resend_cooldown_seconds
+      : undefined;
+    throw new ApiError(message, response.status, data?.code, cooldown, data);
+  }
+
+  return data as RequestEmailVerificationResponse;
+}
+
+/**
+ * Confirm onboarding email verification code for delivery agent
+ */
+export async function confirmDeliveryAgentEmailVerification(
+  identifier: string,
+  otp: string
+): Promise<ConfirmEmailVerificationResponse> {
+  const url = `${API_BASE_URL}/auth/delivery-agent/verify-email/confirm/`;
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        identifier: identifier.trim(),
+        otp: otp.trim(),
+      }),
+    });
+  } catch {
+    throw new ApiError(
+      'Network connection error. Please check your internet connection.',
+      0
+    );
+  }
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const message = extractErrorMessage(data, response.status);
+    throw new ApiError(message, response.status, data?.code, undefined, data);
+  }
+
+  return data as ConfirmEmailVerificationResponse;
 }
 
 /**

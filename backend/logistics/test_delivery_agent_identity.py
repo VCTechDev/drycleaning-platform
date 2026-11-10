@@ -43,8 +43,6 @@ class DeliveryAgentIdentityTests(APITestCase):
     def register_agent(self, username, phone_number, email=None):
         payload = {
             "username": username,
-            "password": self.password,
-            "password_confirm": self.password,
             "phone_number": phone_number,
             "shift_starts_at": "09:00:00",
             "shift_ends_at": "18:00:00",
@@ -129,8 +127,6 @@ class DeliveryAgentIdentityTests(APITestCase):
             {
                 "username": "missing_phone_agent",
                 "email": "missing-phone@example.com",
-                "password": self.password,
-                "password_confirm": self.password,
                 "shift_starts_at": "09:00:00",
                 "shift_ends_at": "18:00:00",
             },
@@ -238,9 +234,75 @@ class DeliveryAgentIdentityTests(APITestCase):
             email="mandatory-email@example.com",
         )
         self.assertEqual(response.status_code, 201, response.data)
+        self.assertFalse(response.data["email_verified"])
+        self.assertFalse(response.data["phone_verified"])
         agent = DeliveryAgent.objects.get(user__username="mandatory_email_agent")
         self.assertEqual(agent.user.email, "mandatory-email@example.com")
         self.assertFalse(agent.email_verified)
+        self.assertFalse(agent.phone_verified)
+
+    def test_registration_without_password_assigns_unusable_password_and_returns_full_profile(self):
+        response = self.register_agent(
+            "unusable_pw_agent",
+            "+919876543230",
+            email="unusable-pw@example.com",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertTrue(response.data["agent_id"].startswith("VC-AGT-"))
+        self.assertFalse(response.data["phone_verified"])
+        self.assertFalse(response.data["email_verified"])
+        self.assertFalse(response.data["is_online"])
+        self.assertTrue(response.data["is_active"])
+        self.assertEqual(response.data["shift_starts_at"], "09:00:00")
+        self.assertEqual(response.data["shift_ends_at"], "18:00:00")
+        self.assertEqual(response.data["shop"], self.shop.id)
+        self.assertEqual(response.data["user"]["username"], "unusable_pw_agent")
+        self.assertEqual(response.data["user"]["email"], "unusable-pw@example.com")
+        self.assertEqual(response.data["user"]["phone_number"], "+919876543230")
+        self.assertEqual(response.data["user"]["role"], "delivery_agent")
+        self.assertNotIn("password", response.data)
+        self.assertNotIn("password", response.data["user"])
+
+        user = User.objects.get(username="unusable_pw_agent")
+        self.assertFalse(user.has_usable_password())
+        self.assertEqual(user.role, "delivery_agent")
+
+        agent = DeliveryAgent.objects.get(user=user)
+        self.assertFalse(agent.phone_verified)
+        self.assertFalse(agent.email_verified)
+        self.assertFalse(agent.is_online)
+        self.assertTrue(agent.is_active)
+        self.assertEqual(agent.agent_id, response.data["agent_id"])
+
+    def test_registration_rejects_protected_fields(self):
+        protected_cases = [
+            ("agent_id", "VC-AGT-99999"),
+            ("phone_verified", True),
+            ("email_verified", True),
+            ("role", "platform_admin"),
+            ("shop", self.shop.id),
+        ]
+        for idx, (field_name, field_value) in enumerate(protected_cases):
+            payload = {
+                "username": f"protected_agent_{idx}",
+                "email": f"protected_{idx}@example.com",
+                "phone_number": f"+91987654323{idx}",
+                "shift_starts_at": "09:00:00",
+                "shift_ends_at": "18:00:00",
+                field_name: field_value,
+            }
+            res = self.client.post(
+                "/api/shop-admin/delivery-agents/",
+                payload,
+                format="json",
+            )
+            self.assertEqual(
+                res.status_code,
+                400,
+                f"Field '{field_name}' should have been rejected with 400",
+            )
+            self.assertIn(field_name, res.data)
+            self.assertIn("read-only", str(res.data[field_name]))
 
     def test_removing_email_resets_email_verification(self):
         agent = self.create_agent(email="remove-email@example.com")

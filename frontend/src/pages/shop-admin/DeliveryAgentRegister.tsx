@@ -5,7 +5,6 @@ import {
     ArrowLeft,
     CheckCircle2,
     Clock,
-    KeyRound,
     Loader2,
     Mail,
     Phone,
@@ -25,8 +24,6 @@ export default function ShopDeliveryAgentRegister() {
 
     const [username, setUsername] = useState("");
     const [email, setEmail] = useState("");
-    const [password, setPassword] = useState("");
-    const [passwordConfirm, setPasswordConfirm] = useState("");
     const [firstName, setFirstName] = useState("");
     const [lastName, setLastName] = useState("");
     const [phoneNumber, setPhoneNumber] = useState("");
@@ -36,7 +33,7 @@ export default function ShopDeliveryAgentRegister() {
 
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
     const [generalError, setGeneralError] = useState<string | null>(null);
-    const [successMessage, setSuccessMessage] = useState<string | null>(null);
+    const [registeredAgent, setRegisteredAgent] = useState<{ username: string; agentId: string } | null>(null);
 
     const validateForm = (): boolean => {
         const errors: Record<string, string> = {};
@@ -53,14 +50,8 @@ export default function ShopDeliveryAgentRegister() {
             errors.email = "Please enter a valid email address.";
         }
 
-        if (!password) {
-            errors.password = "Password is required.";
-        } else if (password.length < 8) {
-            errors.password = "Password must be at least 8 characters long.";
-        }
-
-        if (password !== passwordConfirm) {
-            errors.password_confirm = "Passwords do not match.";
+        if (!phoneNumber.trim()) {
+            errors.phone_number = "Phone number is required.";
         }
 
         if (!shiftStartsAt) {
@@ -82,7 +73,7 @@ export default function ShopDeliveryAgentRegister() {
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
         setGeneralError(null);
-        setSuccessMessage(null);
+        setRegisteredAgent(null);
 
         if (!validateForm()) {
             return;
@@ -94,8 +85,6 @@ export default function ShopDeliveryAgentRegister() {
         const payload: RegisterDeliveryAgentPayload = {
             username: username.trim(),
             email: email.trim().toLowerCase(),
-            password,
-            password_confirm: passwordConfirm,
             first_name: firstName.trim(),
             last_name: lastName.trim(),
             phone_number: phoneNumber.trim(),
@@ -105,11 +94,14 @@ export default function ShopDeliveryAgentRegister() {
         };
 
         try {
-            await registerMutation.mutateAsync(payload);
-            setSuccessMessage(`Delivery agent @${username.trim()} was successfully registered!`);
+            const newAgent = await registerMutation.mutateAsync(payload);
+            setRegisteredAgent({
+                username: username.trim(),
+                agentId: newAgent.agent_id,
+            });
             setTimeout(() => {
                 navigate("/shop-admin/delivery-agents");
-            }, 1200);
+            }, 3000);
         } catch (err: unknown) {
             const error = err as { response?: { data?: Record<string, unknown> } };
             const data = error.response?.data;
@@ -119,7 +111,7 @@ export default function ShopDeliveryAgentRegister() {
 
                 Object.entries(data).forEach(([key, val]) => {
                     const message = Array.isArray(val) ? val.join(" ") : String(val);
-                    if (["username", "email", "password", "password_confirm", "shift_starts_at", "shift_ends_at", "phone_number"].includes(key)) {
+                    if (["username", "email", "shift_starts_at", "shift_ends_at", "phone_number"].includes(key)) {
                         newFieldErrors[key] = message;
                     } else {
                         nonFieldErrors.push(`${key}: ${message}`);
@@ -170,12 +162,22 @@ export default function ShopDeliveryAgentRegister() {
             {/* Main Form Surface */}
             <div className="rounded-2xl border border-[#E2E8F0] bg-white p-6 shadow-xs sm:p-8">
                 <div className="max-w-4xl">
-                    {successMessage && (
-                        <div className="mb-6 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-800">
-                            <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
-                            <div>
-                                <p>{successMessage}</p>
-                                <p className="text-xs font-normal text-emerald-600 mt-0.5">Redirecting to roster...</p>
+                    {registeredAgent && (
+                        <div className="mb-6 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800">
+                            <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
+                            <div className="flex-1">
+                                <p className="text-sm font-bold text-emerald-900">
+                                    Delivery agent @{registeredAgent.username} registered successfully!
+                                </p>
+                                <div className="mt-2 flex items-center gap-2">
+                                    <span className="text-xs font-medium text-emerald-700">Public Agent ID:</span>
+                                    <span className="rounded-md bg-emerald-100 px-2.5 py-1 text-xs font-bold font-mono text-emerald-900 border border-emerald-300">
+                                        {registeredAgent.agentId}
+                                    </span>
+                                </div>
+                                <p className="text-xs text-emerald-600 mt-2">
+                                    The agent will log in using this Agent ID (or their registered phone) and OTP delivered to their email. Redirecting to roster...
+                                </p>
                             </div>
                         </div>
                     )}
@@ -188,15 +190,15 @@ export default function ShopDeliveryAgentRegister() {
                     )}
 
                     <form onSubmit={handleSubmit} className="space-y-8">
-                        {/* Section 1: Credentials */}
-                        <div className="">
+                        {/* Section 1: Account & Authentication */}
+                        <div>
                             <div className="mb-4">
                                 <h2 className="flex items-center gap-2 text-sm font-bold text-slate-900">
                                     <Shield className="h-4 w-4 text-[#2563EB]" />
-                                    Account Credentials
+                                    Account & Authentication
                                 </h2>
                                 <p className="text-xs text-slate-500 mt-0.5">
-                                    Login credentials used by the delivery agent to sign in to the platform.
+                                    Account identity used by the delivery agent. Agents authenticate passwordlessly using OTP delivered to their registered email address.
                                 </p>
                             </div>
 
@@ -257,62 +259,6 @@ export default function ShopDeliveryAgentRegister() {
                                         <p className="mt-1 text-xs text-rose-600">{fieldErrors.email}</p>
                                     )}
                                 </div>
-
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                        Password <span className="text-rose-500">*</span>
-                                    </label>
-                                    <div className="relative">
-                                        <KeyRound className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                                        <input
-                                            type="password"
-                                            required
-                                            value={password}
-                                            onChange={(e) => {
-                                                setPassword(e.target.value);
-                                                if (fieldErrors.password) setFieldErrors((prev) => ({ ...prev, password: "" }));
-                                            }}
-                                            disabled={registerMutation.isPending}
-                                            className={`w-full rounded-xl border pl-10 pr-3.5 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 ${
-                                                fieldErrors.password
-                                                    ? "border-rose-300 bg-rose-50/30 focus:border-rose-500 focus:ring-rose-100"
-                                                    : "border-slate-200 bg-white focus:border-[#2563EB] focus:ring-blue-100"
-                                            }`}
-                                            placeholder="Minimum 8 characters"
-                                        />
-                                    </div>
-                                    {fieldErrors.password && (
-                                        <p className="mt-1 text-xs text-rose-600">{fieldErrors.password}</p>
-                                    )}
-                                </div>
-
-                                <div>
-                                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                        Confirm Password <span className="text-rose-500">*</span>
-                                    </label>
-                                    <div className="relative">
-                                        <KeyRound className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                                        <input
-                                            type="password"
-                                            required
-                                            value={passwordConfirm}
-                                            onChange={(e) => {
-                                                setPasswordConfirm(e.target.value);
-                                                if (fieldErrors.password_confirm) setFieldErrors((prev) => ({ ...prev, password_confirm: "" }));
-                                            }}
-                                            disabled={registerMutation.isPending}
-                                            className={`w-full rounded-xl border pl-10 pr-3.5 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 ${
-                                                fieldErrors.password_confirm
-                                                    ? "border-rose-300 bg-rose-50/30 focus:border-rose-500 focus:ring-rose-100"
-                                                    : "border-slate-200 bg-white focus:border-[#2563EB] focus:ring-blue-100"
-                                            }`}
-                                            placeholder="Re-enter password"
-                                        />
-                                    </div>
-                                    {fieldErrors.password_confirm && (
-                                        <p className="mt-1 text-xs text-rose-600">{fieldErrors.password_confirm}</p>
-                                    )}
-                                </div>
                             </div>
                         </div>
 
@@ -361,20 +307,31 @@ export default function ShopDeliveryAgentRegister() {
 
                                 <div>
                                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                        Phone Number
+                                        Phone Number <span className="text-rose-500">*</span>
                                     </label>
                                     <div className="relative">
                                         <Phone className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                                         <input
                                             type="tel"
+                                            required
                                             value={phoneNumber}
-                                            onChange={(e) => setPhoneNumber(e.target.value)}
-                                            maxLength={15}
+                                            onChange={(e) => {
+                                                setPhoneNumber(e.target.value);
+                                                if (fieldErrors.phone_number) setFieldErrors((prev) => ({ ...prev, phone_number: "" }));
+                                            }}
+                                            maxLength={16}
                                             disabled={registerMutation.isPending}
-                                            className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3.5 py-2.5 text-sm text-slate-800 focus:border-[#2563EB] focus:outline-none focus:ring-2 focus:ring-blue-100"
+                                            className={`w-full rounded-xl border pl-10 pr-3.5 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 ${
+                                                fieldErrors.phone_number
+                                                    ? "border-rose-300 bg-rose-50/30 focus:border-rose-500 focus:ring-rose-100"
+                                                    : "border-slate-200 bg-white focus:border-[#2563EB] focus:ring-blue-100"
+                                            }`}
                                             placeholder="e.g. 9876543210"
                                         />
                                     </div>
+                                    {fieldErrors.phone_number && (
+                                        <p className="mt-1 text-xs text-rose-600">{fieldErrors.phone_number}</p>
+                                    )}
                                 </div>
                             </div>
                         </div>

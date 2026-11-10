@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
     AlertCircle,
+    CheckCircle2,
     Clock,
     Edit3,
     Loader2,
@@ -260,11 +261,18 @@ export default function ShopDeliveryAgents() {
                                                         <div className="font-semibold text-slate-900">
                                                             {fullName || agent.user.username}
                                                         </div>
-                                                        <div className="text-xs text-slate-500 font-mono">
-                                                            @{agent.user.username}
+                                                        <div className="flex items-center gap-2 mt-0.5">
+                                                            <span className="text-xs text-slate-500 font-mono">
+                                                                @{agent.user.username}
+                                                            </span>
+                                                            {agent.agent_id && (
+                                                                <span className="inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold font-mono text-slate-700 border border-slate-200/80">
+                                                                    {agent.agent_id}
+                                                                </span>
+                                                            )}
                                                         </div>
                                                         {agent.user.email && (
-                                                            <div className="text-xs text-slate-400">
+                                                            <div className="text-xs text-slate-400 mt-0.5">
                                                                 {agent.user.email}
                                                             </div>
                                                         )}
@@ -274,14 +282,29 @@ export default function ShopDeliveryAgents() {
 
                                             {/* Contact */}
                                             <td className="px-6 py-4 text-xs text-slate-700">
-                                                {agent.user.phone_number ? (
-                                                    <span className="inline-flex items-center gap-1.5 font-medium">
-                                                        <Phone className="h-3.5 w-3.5 text-slate-400" />
-                                                        {agent.user.phone_number}
-                                                    </span>
-                                                ) : (
-                                                    <span className="text-slate-400 italic">No phone</span>
-                                                )}
+                                                <div className="space-y-1.5">
+                                                    {agent.user.phone_number ? (
+                                                        <span className="inline-flex items-center gap-1.5 font-medium">
+                                                            <Phone className="h-3.5 w-3.5 text-slate-400" />
+                                                            {agent.user.phone_number}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-slate-400 italic">No phone</span>
+                                                    )}
+                                                    <div>
+                                                        {agent.email_verified ? (
+                                                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                                                                <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                                                                Email Verified
+                                                            </span>
+                                                        ) : (
+                                                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200/80 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                                                                <AlertCircle className="h-3 w-3 text-amber-600" />
+                                                                Email Unverified
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
                                             </td>
 
                                             {/* Shift Hours */}

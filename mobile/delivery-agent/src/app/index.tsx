@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState, type ComponentRef } from 'react';
 
 import {
@@ -51,16 +51,26 @@ function ArrowIcon() {
 }
 
 export default function LoginScreen() {
+  const params = useLocalSearchParams<{ identifier?: string }>();
   const screenHeight = Dimensions.get('screen').height;
   const bannerHeight = screenHeight * 0.60;
   const { requestOTP, isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
 
-  const [identifier, setIdentifier] = useState('');
+  const [identifier, setIdentifier] = useState(params.identifier || '');
+  const [prevParamIdentifier, setPrevParamIdentifier] = useState(params.identifier);
   const [identifierFocused, setIdentifierFocused] = useState(false);
   const [identifierError, setIdentifierError] = useState<string | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Adjust state during render when route navigation params change
+  if (params.identifier !== prevParamIdentifier) {
+    setPrevParamIdentifier(params.identifier);
+    if (params.identifier) {
+      setIdentifier(params.identifier);
+    }
+  }
 
   // Auto-redirect if already authenticated
   useEffect(() => {
@@ -240,6 +250,23 @@ export default function LoginScreen() {
                     </Text>
                     {!isSubmitting ? <ArrowIcon /> : null}
                   </Pressable>
+
+                  <View style={styles.verifyEmailPrompt}>
+                    <Text style={styles.verifyEmailText}>First time logging in?</Text>
+                    <Pressable
+                      onPress={() => {
+                        const trimmed = identifier.trim();
+                        router.push({
+                          pathname: '/verify-email',
+                          params: trimmed ? { identifier: trimmed } : undefined,
+                        });
+                      }}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel="Verify your email address">
+                      <Text style={styles.verifyEmailLink}>Verify your email</Text>
+                    </Pressable>
+                  </View>
                 </View>
 
                 <View style={styles.supportContainer}>
@@ -447,6 +474,27 @@ const styles = StyleSheet.create({
     color: '#2563EB',
     marginTop: 8,
     marginBottom: 16,
+    includeFontPadding: false,
+  },
+  verifyEmailPrompt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 18,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  verifyEmailText: {
+    fontSize: 13,
+    color: '#64748B',
+    includeFontPadding: false,
+  },
+  verifyEmailLink: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#2563EB',
     includeFontPadding: false,
   },
   loginButton: {

@@ -11,6 +11,7 @@ export interface DeliveryAgentUser {
 
 export interface DeliveryAgent {
     id: number;
+    agent_id: string;
     user: DeliveryAgentUser;
     shop: number;
     shop_name: string;
@@ -18,6 +19,8 @@ export interface DeliveryAgent {
     shift_ends_at: string;
     is_active: boolean;
     is_online: boolean;
+    phone_verified: boolean;
+    email_verified: boolean;
     active_tasks_count: number;
     created_at: string;
     updated_at: string;
@@ -40,11 +43,9 @@ export interface DeliveryAgentFilters {
 export interface RegisterDeliveryAgentPayload {
     username: string;
     email: string;
-    password: string;
-    password_confirm?: string;
     first_name?: string;
     last_name?: string;
-    phone_number?: string;
+    phone_number: string;
     shift_starts_at: string;
     shift_ends_at: string;
     is_active?: boolean;

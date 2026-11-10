@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { AlertCircle, Clock, Loader2, Phone, User, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, Loader2, Mail, Phone, User, X } from "lucide-react";
 
 import { useUpdateDeliveryAgent } from "../../hooks/shopAdmin/useShopAdminDeliveryAgents";
 import type { DeliveryAgent, UpdateDeliveryAgentPayload } from "../../types/shopAdmin/deliveryAgents";
@@ -109,12 +109,32 @@ function EditDeliveryAgentDialogContent({
                             <User className="h-5 w-5" />
                         </div>
                         <div>
-                            <h3 id="edit-agent-dialog-title" className="text-lg font-bold text-slate-900">
-                                Edit Delivery Agent
-                            </h3>
-                            <p className="text-xs text-slate-500">
-                                Update profile and shift details for <span className="font-semibold text-slate-700">@{agent.user.username}</span>
-                            </p>
+                            <div className="flex items-center gap-2">
+                                <h3 id="edit-agent-dialog-title" className="text-lg font-bold text-slate-900">
+                                    Edit Delivery Agent
+                                </h3>
+                                {agent.agent_id && (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-mono font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                                        {agent.agent_id}
+                                    </span>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                                <p className="text-xs text-slate-500">
+                                    Update profile and shift details for <span className="font-semibold text-slate-700">@{agent.user.username}</span>
+                                </p>
+                                {agent.email_verified ? (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/60">
+                                        <CheckCircle2 className="h-2.5 w-2.5" />
+                                        Email Verified
+                                    </span>
+                                ) : (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200/60">
+                                        <AlertCircle className="h-2.5 w-2.5" />
+                                        Email Unverified
+                                    </span>
+                                )}
+                            </div>
                         </div>
                     </div>
                     <button
@@ -186,6 +206,31 @@ function EditDeliveryAgentDialogContent({
                                 placeholder="e.g. 9876543210"
                             />
                         </div>
+                        <p className="mt-1 text-[11px] text-amber-600 flex items-center gap-1">
+                            <AlertCircle className="h-3 w-3 shrink-0" />
+                            Changing the phone number will reset the agent's phone verification status.
+                        </p>
+                    </div>
+
+                    {/* Registered Email (Read-Only) */}
+                    <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            Email Address
+                        </label>
+                        <div className="relative">
+                            <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                            <input
+                                type="email"
+                                readOnly
+                                disabled
+                                value={agent.user.email || "No email registered"}
+                                className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3.5 py-2 text-sm text-slate-500 cursor-not-allowed"
+                            />
+                        </div>
+                        <p className="mt-1 text-[11px] text-slate-500 flex items-center gap-1">
+                            <AlertCircle className="h-3 w-3 shrink-0 text-slate-400" />
+                            Email address cannot be changed directly. Modifying an agent's registered email resets their email verification status.
+                        </p>
                     </div>
 
                     {/* Shift Times */}

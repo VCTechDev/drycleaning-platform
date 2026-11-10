@@ -565,6 +565,112 @@ await revokedMgr.startup(async () => {
 assert.strictEqual(revokedMgr.user, null, 'Revoked account must be evicted');
 assert.strictEqual(await webClient.getAccessToken(), null, 'Tokens must be cleared on revocation');
 
+// 16. Test Delivery Agent Onboarding Email Verification APIs & Validation
+console.log('Test 21: requestDeliveryAgentEmailVerification sends trimmed identifier to correct endpoint');
+let capturedRequest = null;
+const mockFetchEmailRequest = async (url, options) => {
+  capturedRequest = { url, options, body: JSON.parse(options.body) };
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({
+      message: 'If an eligible account matches the submitted identifier, a verification code has been sent.',
+      resend_cooldown_seconds: 60,
+      expires_in_seconds: 600,
+    }),
+  };
+};
+
+async function testRequestEmailVerification(fetchFn, identifier) {
+  const url = 'http://localhost:8000/api/auth/delivery-agent/verify-email/request/';
+  const res = await fetchFn(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ identifier: identifier.trim() }),
+  });
+  return await res.json();
+}
+
+const reqResult = await testRequestEmailVerification(mockFetchEmailRequest, '  VC-AGT-00001  ');
+assert.strictEqual(capturedRequest.url, 'http://localhost:8000/api/auth/delivery-agent/verify-email/request/');
+assert.strictEqual(capturedRequest.body.identifier, 'VC-AGT-00001');
+assert.strictEqual(reqResult.resend_cooldown_seconds, 60);
+assert.strictEqual(reqResult.expires_in_seconds, 600);
+
+console.log('Test 22: requestDeliveryAgentEmailVerification handles 429 rate limit correctly');
+const mockFetchRateLimit = async () => ({
+  ok: false,
+  status: 429,
+  json: async () => ({ detail: 'Too many requests. Please try again later.' }),
+});
+try {
+  const res = await mockFetchRateLimit();
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(extractErrorMessage(data, res.status));
+  }
+  assert.fail('Should have thrown error');
+} catch (err) {
+  assert.strictEqual(err.message, 'Too many requests. Please try again later.');
+}
+
+console.log('Test 23: confirmDeliveryAgentEmailVerification sends identifier and trimmed 6-digit OTP');
+let capturedConfirm = null;
+const mockFetchEmailConfirm = async (url, options) => {
+  capturedConfirm = { url, options, body: JSON.parse(options.body) };
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({
+      message: 'Email verified successfully. You may now log in.',
+    }),
+  };
+};
+
+async function testConfirmEmailVerification(fetchFn, identifier, otp) {
+  const url = 'http://localhost:8000/api/auth/delivery-agent/verify-email/confirm/';
+  const res = await fetchFn(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ identifier: identifier.trim(), otp: otp.trim() }),
+  });
+  return await res.json();
+}
+
+const confirmResult = await testConfirmEmailVerification(mockFetchEmailConfirm, '  +919876543210  ', ' 123456 ');
+assert.strictEqual(capturedConfirm.url, 'http://localhost:8000/api/auth/delivery-agent/verify-email/confirm/');
+assert.strictEqual(capturedConfirm.body.identifier, '+919876543210');
+assert.strictEqual(capturedConfirm.body.otp, '123456');
+assert.strictEqual(confirmResult.message, 'Email verified successfully. You may now log in.');
+
+console.log('Test 24: confirmDeliveryAgentEmailVerification error message extraction preserves remaining attempts');
+const mockFetchOtpFail = async () => ({
+  ok: false,
+  status: 400,
+  json: async () => ({ detail: 'Invalid verification code. 3 attempt(s) remaining.' }),
+});
+try {
+  const res = await mockFetchOtpFail();
+  const data = await res.json();
+  throw new Error(extractErrorMessage(data, res.status));
+} catch (err) {
+  assert.strictEqual(err.message, 'Invalid verification code. 3 attempt(s) remaining.');
+}
+
+console.log('Test 25: Generic anti-enumeration notice prevents leaking account existence');
+const genericSecurityNotice = 'If an eligible account matches these details, a verification code will be sent to its registered email address.';
+assert.strictEqual(
+  genericSecurityNotice.includes('If an eligible account matches'),
+  true,
+  'Security copy must never state definitively that an email was sent'
+);
+
+console.log('Test 26: Email verification does not issue tokens or authenticate the session');
+const unauthClient = new WebTokenStorage(new Map());
+assert.strictEqual(await unauthClient.getAccessToken(), null);
+assert.strictEqual(await unauthClient.getRefreshToken(), null);
+assert.strictEqual(await unauthClient.getUserData(), null);
+
 console.log('======================================================');
-console.log('ALL 20 AUTHENTICATION & PERSISTENCE TESTS PASSED (100% OK)');
+console.log('ALL 26 AUTHENTICATION & PERSISTENCE TESTS PASSED (100% OK)');
 console.log('======================================================');

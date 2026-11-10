@@ -1,5 +1,4 @@
 
-from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -94,16 +93,6 @@ class ShopAdminDeliveryAgentRegisterSerializer(serializers.Serializer):
         allow_null=False,
         trim_whitespace=True,
     )
-    password = serializers.CharField(
-        write_only=True,
-        required=True,
-        style={"input_type": "password"},
-    )
-    password_confirm = serializers.CharField(
-        write_only=True,
-        required=False,
-        style={"input_type": "password"},
-    )
     first_name = serializers.CharField(
         max_length=150,
         required=False,
@@ -128,7 +117,13 @@ class ShopAdminDeliveryAgentRegisterSerializer(serializers.Serializer):
     shift_ends_at = serializers.TimeField(required=True)
     is_active = serializers.BooleanField(required=False, default=True)
 
-    PROTECTED_FIELDS = {"agent_id", "phone_verified", "email_verified"}
+    PROTECTED_FIELDS = {
+        "agent_id",
+        "phone_verified",
+        "email_verified",
+        "role",
+        "shop",
+    }
 
     def validate_username(self, value):
         username = value.strip()
@@ -172,21 +167,6 @@ class ShopAdminDeliveryAgentRegisterSerializer(serializers.Serializer):
                 for field in forbidden
             })
 
-        password = attrs.get("password")
-        password_confirm = attrs.get("password_confirm")
-
-        if password_confirm is not None and password != password_confirm:
-            raise serializers.ValidationError({
-                "password_confirm": "Passwords do not match."
-            })
-
-        try:
-            validate_password(password)
-        except DjangoValidationError as error:
-            raise serializers.ValidationError({
-                "password": list(error.messages),
-            }) from error
-
         shift_starts = attrs.get("shift_starts_at")
         shift_ends = attrs.get("shift_ends_at")
         if shift_starts and shift_ends and shift_starts == shift_ends:
@@ -199,10 +179,8 @@ class ShopAdminDeliveryAgentRegisterSerializer(serializers.Serializer):
     def create(self, validated_data):
         shop = self.context["shop"]
 
-        validated_data.pop("password_confirm", None)
         username = validated_data.pop("username")
         email = validated_data.pop("email")
-        password = validated_data.pop("password")
         first_name = validated_data.pop("first_name", "")
         last_name = validated_data.pop("last_name", "")
         phone_number = validated_data.pop("phone_number")
@@ -213,15 +191,16 @@ class ShopAdminDeliveryAgentRegisterSerializer(serializers.Serializer):
 
         try:
             with transaction.atomic():
-                user = User.objects.create_user(
+                user = User(
                     username=username,
                     email=email,
-                    password=password,
                     first_name=first_name,
                     last_name=last_name,
                     phone_number=phone_number,
                     role="delivery_agent",
                 )
+                user.set_unusable_password()
+                user.save()
                 agent = DeliveryAgent.objects.create(
                     user=user,
                     shop=shop,
@@ -229,6 +208,8 @@ class ShopAdminDeliveryAgentRegisterSerializer(serializers.Serializer):
                     shift_ends_at=shift_ends_at,
                     is_active=is_active,
                     is_online=False,
+                    phone_verified=False,
+                    email_verified=False,
                 )
         except IntegrityError as exc:
             err_text = str(exc).lower()

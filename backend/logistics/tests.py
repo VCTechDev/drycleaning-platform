@@ -140,8 +140,6 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
         payload = {
             "username": "agent_arun",
             "email": "arun@example.com",
-            "password": "SecurePassword123!",
-            "password_confirm": "SecurePassword123!",
             "first_name": "Arun",
             "last_name": "Kumar",
             "phone_number": "9876543299",
@@ -161,12 +159,16 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
         self.assertEqual(res.data["shift_ends_at"], "17:30:00")
         self.assertTrue(res.data["is_active"])
         self.assertFalse(res.data["is_online"])
+        self.assertFalse(res.data["phone_verified"])
+        self.assertFalse(res.data["email_verified"])
+        self.assertTrue(res.data["agent_id"].startswith("VC-AGT-"))
         self.assertEqual(res.data["shop"], self.shop_1.id)
 
         # Verify DB records
         user = User.objects.get(username="agent_arun")
         self.assertEqual(user.email, "arun@example.com")
         self.assertEqual(user.role, "delivery_agent")
+        self.assertFalse(user.has_usable_password())
 
         agent = DeliveryAgent.objects.get(user=user)
         self.assertEqual(agent.shop, self.shop_1)
@@ -174,37 +176,48 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
         self.assertEqual(agent.shift_ends_at, time(17, 30))
         self.assertTrue(agent.is_active)
         self.assertFalse(agent.is_online)
+        self.assertFalse(agent.phone_verified)
+        self.assertFalse(agent.email_verified)
 
     # 2. The new user's role is strictly delivery_agent
     def test_new_user_role_is_strictly_delivery_agent(self):
         self.client.force_authenticate(user=self.shop_admin_1)
 
-        payload = {
+        # Supplying protected 'role' is rejected
+        payload_tampered = {
             "username": "tampered_role_agent",
             "email": "tampered@example.com",
-            "password": "SecurePassword123!",
             "role": "platform_admin",  # Tampered role
             "phone_number": "9876543291",
             "shift_starts_at": "09:00:00",
             "shift_ends_at": "18:00:00",
         }
+        res_tampered = self.client.post("/api/shop-admin/delivery-agents/", payload_tampered, format="json")
+        self.assertEqual(res_tampered.status_code, 400)
+        self.assertIn("role", res_tampered.data)
 
-        res = self.client.post("/api/shop-admin/delivery-agents/", payload, format="json")
+        # Normal registration assigns role strictly as delivery_agent
+        payload_valid = {
+            "username": "valid_role_agent",
+            "email": "valid_role@example.com",
+            "phone_number": "9876543291",
+            "shift_starts_at": "09:00:00",
+            "shift_ends_at": "18:00:00",
+        }
+        res = self.client.post("/api/shop-admin/delivery-agents/", payload_valid, format="json")
         self.assertEqual(res.status_code, 201, res.data)
         self.assertEqual(res.data["user"]["role"], "delivery_agent")
 
-        user = User.objects.get(username="tampered_role_agent")
+        user = User.objects.get(username="valid_role_agent")
         self.assertEqual(user.role, "delivery_agent")
 
-    # 3. Passwords are hashed correctly and never exposed
-    def test_passwords_are_hashed_correctly_and_not_exposed(self):
+    # 3. Delivery agents are assigned an unusable password and passwords are never exposed
+    def test_delivery_agents_assigned_unusable_password_and_no_password_exposed(self):
         self.client.force_authenticate(user=self.shop_admin_1)
-        raw_password = "MySecurePassword123!"
 
         payload = {
-            "username": "hashed_pass_agent",
-            "email": "hashed@example.com",
-            "password": raw_password,
+            "username": "unusable_pass_agent",
+            "email": "unusable@example.com",
             "phone_number": "9876543292",
             "shift_starts_at": "09:00:00",
             "shift_ends_at": "18:00:00",
@@ -214,47 +227,56 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
         self.assertEqual(res.status_code, 201)
         self.assertNotIn("password", res.data)
         self.assertNotIn("password_hash", res.data)
+        self.assertNotIn("password", res.data.get("user", {}))
 
-        user = User.objects.get(username="hashed_pass_agent")
-        self.assertNotEqual(user.password, raw_password)
-        self.assertTrue(check_password(raw_password, user.password))
+        user = User.objects.get(username="unusable_pass_agent")
+        self.assertFalse(user.has_usable_password())
 
     # 4. Invalid registration data is rejected
     def test_invalid_registration_data_rejected(self):
         self.client.force_authenticate(user=self.shop_admin_1)
 
-        # Mismatched passwords
-        res_mismatch = self.client.post(
+        # Missing username
+        res_no_username = self.client.post(
             "/api/shop-admin/delivery-agents/",
             {
-                "username": "agent_invalid_1",
                 "email": "invalid1@example.com",
-                "password": "StrongPassword123!",
-                "password_confirm": "DifferentPassword123!",
                 "phone_number": "9876543293",
                 "shift_starts_at": "09:00:00",
                 "shift_ends_at": "18:00:00",
             },
             format="json",
         )
-        self.assertEqual(res_mismatch.status_code, 400)
-        self.assertIn("password_confirm", res_mismatch.data)
+        self.assertEqual(res_no_username.status_code, 400)
+        self.assertIn("username", res_no_username.data)
 
-        # Weak/short password
-        res_weak = self.client.post(
+        # Missing email
+        res_no_email = self.client.post(
             "/api/shop-admin/delivery-agents/",
             {
                 "username": "agent_invalid_2",
-                "email": "invalid2@example.com",
-                "password": "123",
                 "phone_number": "9876543294",
                 "shift_starts_at": "09:00:00",
                 "shift_ends_at": "18:00:00",
             },
             format="json",
         )
-        self.assertEqual(res_weak.status_code, 400)
-        self.assertIn("password", res_weak.data)
+        self.assertEqual(res_no_email.status_code, 400)
+        self.assertIn("email", res_no_email.data)
+
+        # Missing phone number
+        res_no_phone = self.client.post(
+            "/api/shop-admin/delivery-agents/",
+            {
+                "username": "agent_invalid_phone",
+                "email": "invalidphone@example.com",
+                "shift_starts_at": "09:00:00",
+                "shift_ends_at": "18:00:00",
+            },
+            format="json",
+        )
+        self.assertEqual(res_no_phone.status_code, 400)
+        self.assertIn("phone_number", res_no_phone.data)
 
         # Identical shift start and end times
         res_times = self.client.post(
@@ -262,7 +284,6 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
             {
                 "username": "agent_invalid_3",
                 "email": "invalid3@example.com",
-                "password": "StrongPassword123!",
                 "phone_number": "9876543295",
                 "shift_starts_at": "09:00:00",
                 "shift_ends_at": "09:00:00",
@@ -282,7 +303,6 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
             {
                 "username": self.existing_agent_user.username,
                 "email": "different_email@example.com",
-                "password": "StrongPassword123!",
                 "phone_number": "9876543296",
                 "shift_starts_at": "09:00:00",
                 "shift_ends_at": "18:00:00",
@@ -298,7 +318,6 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
             {
                 "username": "brand_new_agent_username",
                 "email": self.existing_agent_user.email.upper(),
-                "password": "StrongPassword123!",
                 "phone_number": "9876543297",
                 "shift_starts_at": "09:00:00",
                 "shift_ends_at": "18:00:00",
@@ -315,7 +334,6 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
         payload = {
             "username": "rollback_agent",
             "email": "rollback@example.com",
-            "password": "StrongPassword123!",
             "phone_number": "9876543298",
             "shift_starts_at": "09:00:00",
             "shift_ends_at": "18:00:00",
@@ -429,22 +447,33 @@ class ShopAdminDeliveryAgentManagementTests(APITestCase):
     def test_client_supplied_shop_id_cannot_override_authenticated_shop(self):
         self.client.force_authenticate(user=self.shop_admin_1)
 
-        payload = {
-            "username": "hijack_shop_agent",
-            "email": "hijack@example.com",
-            "password": "StrongPassword123!",
-            "phone_number": "9876543299",
-            "shop_id": self.shop_2.id,  # Attempting to assign to Shop 2
+        # Supplying protected 'shop' field is rejected with 400
+        payload_shop = {
+            "username": "hijack_shop_agent_1",
+            "email": "hijack1@example.com",
+            "phone_number": "9876543298",
             "shop": self.shop_2.id,
             "shift_starts_at": "09:00:00",
             "shift_ends_at": "18:00:00",
         }
+        res_shop = self.client.post("/api/shop-admin/delivery-agents/", payload_shop, format="json")
+        self.assertEqual(res_shop.status_code, 400)
+        self.assertIn("shop", res_shop.data)
 
-        res = self.client.post("/api/shop-admin/delivery-agents/", payload, format="json")
+        # Supplying shop_id does not override authenticated shop
+        payload_shop_id = {
+            "username": "hijack_shop_agent_2",
+            "email": "hijack2@example.com",
+            "phone_number": "9876543299",
+            "shop_id": self.shop_2.id,
+            "shift_starts_at": "09:00:00",
+            "shift_ends_at": "18:00:00",
+        }
+        res = self.client.post("/api/shop-admin/delivery-agents/", payload_shop_id, format="json")
         self.assertEqual(res.status_code, 201)
         self.assertEqual(res.data["shop"], self.shop_1.id)
 
-        agent = DeliveryAgent.objects.get(user__username="hijack_shop_agent")
+        agent = DeliveryAgent.objects.get(user__username="hijack_shop_agent_2")
         self.assertEqual(agent.shop, self.shop_1)
 
     # 10. Unauthorized roles cannot register or manage agents

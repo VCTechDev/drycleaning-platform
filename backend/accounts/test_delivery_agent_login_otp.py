@@ -28,6 +28,7 @@ from accounts.models import (
 from accounts.rate_limit import RateLimitDecision, RateLimitResult
 from accounts.rate_limit_keys import ClientIPResolutionError
 from accounts.views.auth import (
+    UNIFORM_EMAIL_VERIFY_REQUEST_RESPONSE,
     ChallengeSecretConfigurationError,
     compute_challenge_id_digest,
     get_challenge_id_secret,
@@ -188,9 +189,10 @@ class DeliveryAgentLoginOTPTests(TransactionTestCase):
     # 4. Unverified phone is rejected
     # -------------------------------------------------------------------------
     def test_04_unverified_phone_is_rejected(self):
-        """Agent with unverified phone number receives generic response without OTP email."""
+        """Under EMAIL policy, agent with unverified phone but verified email can successfully request login OTP."""
         self.agent.phone_verified = False
-        self.agent.save(update_fields=["phone_verified"])
+        self.agent.email_verified = True
+        self.agent.save(update_fields=["phone_verified", "email_verified"])
 
         response = self.client.post(
             REQUEST_OTP_URL,
@@ -198,9 +200,13 @@ class DeliveryAgentLoginOTPTests(TransactionTestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn("message", response.data)
-        self.assertEqual(len(mail.outbox), 0)
-        self.assertEqual(DeliveryAgentLoginChallenge.objects.count(), 0)
+        self.assertIn("challenge_id", response.data)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [self.agent_user.email])
+        self.assertEqual(
+            DeliveryAgentLoginChallenge.objects.filter(delivery_agent=self.agent).count(),
+            1,
+        )
 
     # -------------------------------------------------------------------------
     # 5. Missing email is rejected
@@ -1502,13 +1508,15 @@ class DeliveryAgentLoginOTPTests(TransactionTestCase):
         self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_52_refresh_unverified_phone_rejected(self):
-        """Refresh fails if DeliveryAgent.phone_verified is False."""
+        """Under EMAIL policy, refresh succeeds if DeliveryAgent.phone_verified is False but email_verified is True."""
         refresh, _ = self._obtain_delivery_agent_tokens()
         self.agent.phone_verified = False
-        self.agent.save(update_fields=["phone_verified"])
+        self.agent.email_verified = True
+        self.agent.save(update_fields=["phone_verified", "email_verified"])
 
         res = self.client.post(TOKEN_REFRESH_URL, {"refresh": refresh}, format="json")
-        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertIn("access", res.data)
 
     def test_53_refresh_unverified_email_rejected(self):
         """Refresh fails if DeliveryAgent.email_verified is False."""
@@ -2136,9 +2144,13 @@ class DeliveryAgentLoginOTPTests(TransactionTestCase):
             self.assertEqual(len(mail.outbox), 0)
             self.assertNotIn("[DEVELOPMENT ONLY - CONSOLE OTP DELIVERY]", fake_stdout.getvalue())
 
-    @override_settings(DEBUG=True, DELIVERY_AGENT_OTP_CONSOLE_FALLBACK=True)
-    def test_77_existing_verified_email_accounts_still_use_email_delivery(self):
-        """Accounts with verified email continue using email delivery, not console fallback."""
+    @override_settings(
+        DEBUG=True,
+        DELIVERY_AGENT_OTP_CONSOLE_FALLBACK=True,
+        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+    )
+    def test_77_email_verified_agent_uses_console_delivery_in_development(self):
+        """When DEBUG=True and DELIVERY_AGENT_OTP_CONSOLE_FALLBACK=True, email-verified agent receives console OTP and logs in successfully."""
         self.assertTrue(self.agent.email_verified)
         self.assertTrue(bool(self.agent_user.email))
 
@@ -2149,10 +2161,80 @@ class DeliveryAgentLoginOTPTests(TransactionTestCase):
                 format="json",
             )
             self.assertEqual(response.status_code, status.HTTP_200_OK)
-            # Email delivery used
+            self.assertEqual(
+                response.data["message"],
+                "Verification code printed to development console.",
+            )
+            self.assertIn("challenge_id", response.data)
+            # Normal email outbox must not have received anything
+            self.assertEqual(len(mail.outbox), 0)
+
+            console_output = fake_stdout.getvalue()
+            self.assertIn("[DEVELOPMENT ONLY - CONSOLE OTP DELIVERY]", console_output)
+            self.assertIn(self.agent.agent_id, console_output)
+            raw_otp = self._extract_otp_from_console(console_output)
+
+            # Verification succeeds and returns JWT tokens
+            verify_res = self.client.post(
+                VERIFY_OTP_URL,
+                {
+                    "challenge_id": response.data["challenge_id"],
+                    "otp": raw_otp,
+                },
+                format="json",
+            )
+            self.assertEqual(verify_res.status_code, status.HTTP_200_OK)
+            self.assertIn("access", verify_res.data)
+            self.assertIn("refresh", verify_res.data)
+
+    @override_settings(
+        DEBUG=False,
+        DELIVERY_AGENT_OTP_CONSOLE_FALLBACK=True,
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    )
+    def test_77b_email_verified_agent_uses_email_backend_when_debug_false(self):
+        """When DEBUG=False, console fallback is disabled even if flag is True; email-verified agent uses configured email backend."""
+        self.assertTrue(self.agent.email_verified)
+        self.assertTrue(bool(self.agent_user.email))
+
+        with mock.patch("sys.stdout", new_callable=io.StringIO) as fake_stdout:
+            response = self.client.post(
+                REQUEST_OTP_URL,
+                {"identifier": self.agent.agent_id},
+                format="json",
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(
+                response.data["message"],
+                "Verification code sent successfully to your registered email.",
+            )
             self.assertEqual(len(mail.outbox), 1)
             self.assertEqual(mail.outbox[0].to, [self.agent_user.email])
-            # Console output not used
+            self.assertNotIn("[DEVELOPMENT ONLY - CONSOLE OTP DELIVERY]", fake_stdout.getvalue())
+
+    @override_settings(
+        DEBUG=True,
+        DELIVERY_AGENT_OTP_CONSOLE_FALLBACK=False,
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    )
+    def test_77c_email_verified_agent_uses_email_backend_when_flag_disabled(self):
+        """When DELIVERY_AGENT_OTP_CONSOLE_FALLBACK=False, email-verified agent uses configured email backend even if DEBUG=True."""
+        self.assertTrue(self.agent.email_verified)
+        self.assertTrue(bool(self.agent_user.email))
+
+        with mock.patch("sys.stdout", new_callable=io.StringIO) as fake_stdout:
+            response = self.client.post(
+                REQUEST_OTP_URL,
+                {"identifier": self.agent.agent_id},
+                format="json",
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(
+                response.data["message"],
+                "Verification code sent successfully to your registered email.",
+            )
+            self.assertEqual(len(mail.outbox), 1)
+            self.assertEqual(mail.outbox[0].to, [self.agent_user.email])
             self.assertNotIn("[DEVELOPMENT ONLY - CONSOLE OTP DELIVERY]", fake_stdout.getvalue())
 
     @override_settings(DEBUG=True, DELIVERY_AGENT_OTP_CONSOLE_FALLBACK=True)
@@ -2180,15 +2262,16 @@ class DeliveryAgentLoginOTPTests(TransactionTestCase):
         self.agent.save(update_fields=["email_verified"])
         DeliveryAgentLoginChallenge.objects.all().delete()
 
-        res_email = self.client.post(
-            REQUEST_OTP_URL,
-            {"identifier": self.agent.agent_id},
-            format="json",
-        )
-        otp_email = self._extract_otp_from_email()
-        self.assertNotIn(otp_email, str(res_email.data))
-        self.assertNotIn(otp_email, res_email.content.decode("utf-8"))
-        self.assertNotIn("otp", res_email.data)
+        with override_settings(DELIVERY_AGENT_OTP_CONSOLE_FALLBACK=False):
+            res_email = self.client.post(
+                REQUEST_OTP_URL,
+                {"identifier": self.agent.agent_id},
+                format="json",
+            )
+            otp_email = self._extract_otp_from_email()
+            self.assertNotIn(otp_email, str(res_email.data))
+            self.assertNotIn(otp_email, res_email.content.decode("utf-8"))
+            self.assertNotIn("otp", res_email.data)
 
     @override_settings(DEBUG=True, DELIVERY_AGENT_OTP_CONSOLE_FALLBACK=True)
     def test_79_console_fallback_expiration_and_attempt_limits_preserved(self):
@@ -2286,5 +2369,313 @@ class DeliveryAgentLoginOTPTests(TransactionTestCase):
             )
             self.assertEqual(res_prod.status_code, status.HTTP_200_OK)
             self.assertEqual(DeliveryAgentLoginChallenge.objects.count(), 0)
+
+    # -------------------------------------------------------------------------
+    # 81. Five incorrect email-verification attempts invalidate challenge (P0)
+    # -------------------------------------------------------------------------
+    def test_81_email_verification_five_incorrect_attempts_invalidates_challenge(self):
+        """Five incorrect email-verification OTP attempts invalidate the challenge; a subsequent correct OTP must fail."""
+        self.agent.email_verified = False
+        self.agent.save(update_fields=["email_verified"])
+
+        # Request verification code
+        res_req = self.client.post(
+            VERIFY_EMAIL_REQUEST_URL,
+            {"identifier": self.agent.agent_id},
+            format="json",
+        )
+        self.assertEqual(res_req.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(mail.outbox), 1)
+        correct_otp = self._extract_otp_from_email()
+
+        # Submit 4 incorrect attempts
+        for attempt in range(1, 5):
+            res_bad = self.client.post(
+                VERIFY_EMAIL_CONFIRM_URL,
+                {"identifier": self.agent.agent_id, "otp": "000000"},
+                format="json",
+            )
+            self.assertEqual(res_bad.status_code, status.HTTP_400_BAD_REQUEST)
+            remaining = 5 - attempt
+            self.assertIn(f"{remaining} attempt(s) remaining", res_bad.data["detail"])
+
+        # 5th incorrect attempt invalidates the challenge
+        res_bad_5 = self.client.post(
+            VERIFY_EMAIL_CONFIRM_URL,
+            {"identifier": self.agent.agent_id, "otp": "000000"},
+            format="json",
+        )
+        self.assertEqual(res_bad_5.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("maximum attempts exceeded", res_bad_5.data["detail"].lower())
+
+        # Verify challenge in DB is marked used/invalidated
+        challenge = PasswordResetOTP.objects.filter(
+            user=self.agent_user,
+            purpose="delivery_agent_email_verify",
+        ).order_by("-created_at").first()
+        self.assertIsNotNone(challenge)
+        self.assertEqual(challenge.attempts, 5)
+        self.assertIsNotNone(challenge.used_at)
+
+        # 6th attempt with the CORRECT OTP must fail because challenge was burned
+        res_correct = self.client.post(
+            VERIFY_EMAIL_CONFIRM_URL,
+            {"identifier": self.agent.agent_id, "otp": correct_otp},
+            format="json",
+        )
+        self.assertEqual(res_correct.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("invalid or expired", res_correct.data["detail"].lower())
+
+        # Agent remains unverified
+        self.agent.refresh_from_db()
+        self.assertFalse(self.agent.email_verified)
+
+    # -------------------------------------------------------------------------
+    # 82. Cross-account email verification OTP submission fails (P0)
+    # -------------------------------------------------------------------------
+    def test_82_email_verification_cross_account_otp_submission_fails(self):
+        """Agent A's valid email-verification OTP submitted with Agent B's identifier must fail without verifying either account."""
+        # Setup Agent B
+        user_b = User.objects.create_user(
+            username="cross_agent_b",
+            email="agent_b@example.com",
+            password="StrongPassword123!",
+            role="delivery_agent",
+            phone_number="+919876543999",
+        )
+        agent_b = DeliveryAgent.objects.create(
+            user=user_b,
+            shop=self.shop,
+            shift_starts_at=time(9),
+            shift_ends_at=time(18),
+            is_active=True,
+            phone_verified=False,
+            email_verified=False,
+        )
+
+        self.agent.email_verified = False
+        self.agent.save(update_fields=["email_verified"])
+
+        # Request verification code for Agent A
+        res_req_a = self.client.post(
+            VERIFY_EMAIL_REQUEST_URL,
+            {"identifier": self.agent.agent_id},
+            format="json",
+        )
+        self.assertEqual(res_req_a.status_code, status.HTTP_200_OK)
+        otp_a = self._extract_otp_from_email()
+
+        # Submit Agent A's OTP with Agent B's identifier (Agent B has no challenge yet)
+        res_cross_1 = self.client.post(
+            VERIFY_EMAIL_CONFIRM_URL,
+            {"identifier": agent_b.agent_id, "otp": otp_a},
+            format="json",
+        )
+        self.assertEqual(res_cross_1.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("invalid or expired", res_cross_1.data["detail"].lower())
+
+        # Neither agent is verified
+        self.agent.refresh_from_db()
+        agent_b.refresh_from_db()
+        self.assertFalse(self.agent.email_verified)
+        self.assertFalse(agent_b.email_verified)
+
+        # Now request a challenge for Agent B
+        res_req_b = self.client.post(
+            VERIFY_EMAIL_REQUEST_URL,
+            {"identifier": agent_b.agent_id},
+            format="json",
+        )
+        self.assertEqual(res_req_b.status_code, status.HTTP_200_OK)
+        otp_b = self._extract_otp_from_email()
+        self.assertNotEqual(otp_a, otp_b)
+
+        # Submit Agent A's OTP for Agent B's challenge
+        res_cross_2 = self.client.post(
+            VERIFY_EMAIL_CONFIRM_URL,
+            {"identifier": agent_b.agent_id, "otp": otp_a},
+            format="json",
+        )
+        self.assertEqual(res_cross_2.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("invalid", res_cross_2.data["detail"].lower())
+
+        # Neither agent is verified by the mismatched OTP
+        self.agent.refresh_from_db()
+        agent_b.refresh_from_db()
+        self.assertFalse(self.agent.email_verified)
+        self.assertFalse(agent_b.email_verified)
+
+        # Submitting the correct OTPs verifies each respective agent
+        res_confirm_a = self.client.post(
+            VERIFY_EMAIL_CONFIRM_URL,
+            {"identifier": self.agent.agent_id, "otp": otp_a},
+            format="json",
+        )
+        self.assertEqual(res_confirm_a.status_code, status.HTTP_200_OK)
+        self.agent.refresh_from_db()
+        self.assertTrue(self.agent.email_verified)
+
+        res_confirm_b = self.client.post(
+            VERIFY_EMAIL_CONFIRM_URL,
+            {"identifier": agent_b.agent_id, "otp": otp_b},
+            format="json",
+        )
+        self.assertEqual(res_confirm_b.status_code, status.HTTP_200_OK)
+        agent_b.refresh_from_db()
+        self.assertTrue(agent_b.email_verified)
+
+    # -------------------------------------------------------------------------
+    # 83 - 86: Email verification development console fallback tests
+    # -------------------------------------------------------------------------
+    @override_settings(
+        DEBUG=True,
+        DELIVERY_AGENT_OTP_CONSOLE_FALLBACK=True,
+        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+    )
+    def test_83_email_verification_console_fallback_active_in_development(self):
+        """When DEBUG=True and DELIVERY_AGENT_OTP_CONSOLE_FALLBACK=True, email verification OTP prints to console even if EMAIL_BACKEND is SMTP."""
+        self.agent.email_verified = False
+        self.agent.save(update_fields=["email_verified"])
+
+        with mock.patch("sys.stdout", new_callable=io.StringIO) as fake_stdout:
+            response = self.client.post(
+                VERIFY_EMAIL_REQUEST_URL,
+                {"identifier": self.agent.agent_id},
+                format="json",
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data, UNIFORM_EMAIL_VERIFY_REQUEST_RESPONSE)
+            # Normal email outbox must not have received anything
+            self.assertEqual(len(mail.outbox), 0)
+
+            console_output = fake_stdout.getvalue()
+            self.assertIn("[DEVELOPMENT ONLY - CONSOLE OTP DELIVERY]", console_output)
+            self.assertIn(self.agent.agent_id, console_output)
+            self.assertIn("Verify your VeeCleen Delivery Agent Email", console_output)
+            raw_otp = self._extract_otp_from_console(console_output)
+
+            # Challenge record in DB remains valid (used_at is None)
+            record = (
+                PasswordResetOTP.objects.filter(
+                    user=self.agent_user,
+                    purpose="delivery_agent_email_verify",
+                )
+                .order_by("-created_at")
+                .first()
+            )
+            self.assertIsNotNone(record)
+            self.assertIsNone(record.used_at)
+
+            # Confirm email verification using the extracted console OTP
+            confirm_res = self.client.post(
+                VERIFY_EMAIL_CONFIRM_URL,
+                {"identifier": self.agent.agent_id, "otp": raw_otp},
+                format="json",
+            )
+            self.assertEqual(confirm_res.status_code, status.HTTP_200_OK)
+            self.assertEqual(
+                confirm_res.data,
+                {"message": "Email verified successfully. You may now log in."},
+            )
+            self.agent.refresh_from_db()
+            self.assertTrue(self.agent.email_verified)
+
+    @override_settings(
+        DEBUG=False,
+        DELIVERY_AGENT_OTP_CONSOLE_FALLBACK=True,
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    )
+    def test_84_email_verification_console_fallback_disabled_when_debug_false(self):
+        """When DEBUG=False, console fallback is disabled even if DELIVERY_AGENT_OTP_CONSOLE_FALLBACK=True; standard EMAIL_BACKEND is used."""
+        self.agent.email_verified = False
+        self.agent.save(update_fields=["email_verified"])
+
+        with mock.patch("sys.stdout", new_callable=io.StringIO) as fake_stdout:
+            response = self.client.post(
+                VERIFY_EMAIL_REQUEST_URL,
+                {"identifier": self.agent.agent_id},
+                format="json",
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(len(mail.outbox), 1)
+            self.assertEqual(mail.outbox[0].subject, "Verify your VeeCleen Delivery Agent Email")
+            self.assertEqual(mail.outbox[0].to, [self.agent_user.email])
+            self.assertNotIn("[DEVELOPMENT ONLY - CONSOLE OTP DELIVERY]", fake_stdout.getvalue())
+
+    @override_settings(
+        DEBUG=True,
+        DELIVERY_AGENT_OTP_CONSOLE_FALLBACK=False,
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    )
+    def test_85_email_verification_console_fallback_disabled_when_flag_false(self):
+        """When DELIVERY_AGENT_OTP_CONSOLE_FALLBACK=False, console fallback is disabled even if DEBUG=True; standard EMAIL_BACKEND is used."""
+        self.agent.email_verified = False
+        self.agent.save(update_fields=["email_verified"])
+
+        with mock.patch("sys.stdout", new_callable=io.StringIO) as fake_stdout:
+            response = self.client.post(
+                VERIFY_EMAIL_REQUEST_URL,
+                {"identifier": self.agent.agent_id},
+                format="json",
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(len(mail.outbox), 1)
+            self.assertEqual(mail.outbox[0].subject, "Verify your VeeCleen Delivery Agent Email")
+            self.assertEqual(mail.outbox[0].to, [self.agent_user.email])
+            self.assertNotIn("[DEVELOPMENT ONLY - CONSOLE OTP DELIVERY]", fake_stdout.getvalue())
+
+    @override_settings(
+        DEBUG=True,
+        DELIVERY_AGENT_OTP_CONSOLE_FALLBACK=True,
+    )
+    def test_86_email_verification_delivery_failure_invalidates_challenge_and_preserves_generic_response(self):
+        """When sending fails under console fallback or production, challenge is invalidated and uniform 200 response returned."""
+        self.agent.email_verified = False
+        self.agent.save(update_fields=["email_verified"])
+
+        # 1. Console delivery failure via EmailMessage.send exception
+        with mock.patch("accounts.views.auth.EmailMessage.send", side_effect=RuntimeError("Terminal write failed")):
+            res_console_fail = self.client.post(
+                VERIFY_EMAIL_REQUEST_URL,
+                {"identifier": self.agent.agent_id},
+                format="json",
+            )
+            self.assertEqual(res_console_fail.status_code, status.HTTP_200_OK)
+            self.assertEqual(res_console_fail.data, UNIFORM_EMAIL_VERIFY_REQUEST_RESPONSE)
+
+        failed_record = (
+            PasswordResetOTP.objects.filter(
+                user=self.agent_user,
+                purpose="delivery_agent_email_verify",
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        self.assertIsNotNone(failed_record)
+        self.assertIsNotNone(failed_record.used_at)
+        self.agent.refresh_from_db()
+        self.assertFalse(self.agent.email_verified)
+
+        # 2. Console delivery failure via sent_count != 1
+        with mock.patch("accounts.views.auth.EmailMessage.send", return_value=0):
+            res_count_fail = self.client.post(
+                VERIFY_EMAIL_REQUEST_URL,
+                {"identifier": self.agent.agent_id},
+                format="json",
+            )
+            self.assertEqual(res_count_fail.status_code, status.HTTP_200_OK)
+            self.assertEqual(res_count_fail.data, UNIFORM_EMAIL_VERIFY_REQUEST_RESPONSE)
+
+        failed_record2 = (
+            PasswordResetOTP.objects.filter(
+                user=self.agent_user,
+                purpose="delivery_agent_email_verify",
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        self.assertIsNotNone(failed_record2)
+        self.assertIsNotNone(failed_record2.used_at)
+
 
 

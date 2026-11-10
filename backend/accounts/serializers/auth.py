@@ -259,11 +259,6 @@ class DeliveryAgentTokenRefreshSerializer(TokenRefreshSerializer):
                 from accounts.views.auth import is_delivery_agent_otp_console_fallback_active
 
                 if not is_delivery_agent_otp_console_fallback_active():
-                    if not agent.phone_verified:
-                        raise AuthenticationFailed(
-                            "Delivery agent phone number is not verified.",
-                            "phone_not_verified",
-                        )
                     if not user.email or not user.email.strip():
                         raise AuthenticationFailed(
                             "Delivery agent missing registered email address.",
